@@ -44,6 +44,7 @@ export default {
   pack: {
     entry: [
       "src/client/index.ts",
+      "src/client/drawer/index.ts",
       "src/core/cms/index.ts",
       "src/core/db/index.ts",
       "src/core/commerce/index.ts",
@@ -66,6 +67,7 @@ export default {
         /^prosekit(\/|$)/,
         /^@prosekit\/pm(\/|$)/,
         /^drizzle-orm(\/|$)/,
+        /^@tanstack\/solid-query(\/|$)/,
       ],
     },
   },
