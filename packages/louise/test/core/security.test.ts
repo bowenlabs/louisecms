@@ -1,0 +1,156 @@
+import { describe, expect, it } from "vitest";
+import {
+  getSessionSecret,
+  louiseSecurityHeaders,
+  matchRateRule,
+  rateLimit,
+  rewriteCspStyleSrc,
+  sanitizeRichHtml,
+  type KVLike,
+  type RateRule,
+} from "../../src/core/security/index.js";
+
+describe("sanitizeRichHtml", () => {
+  it("drops disallowed elements with their contents", () => {
+    const out = sanitizeRichHtml("<div><p>ok</p><script>alert(1)</script></div>");
+    expect(out).toContain("<p>ok</p>");
+    expect(out).not.toMatch(/script|alert/i);
+  });
+
+  it("strips event handlers and unsafe url schemes but keeps safe formatting", () => {
+    const out = sanitizeRichHtml(
+      '<p onclick="x()">hi <strong>b</strong> ' +
+        '<a href="javascript:alert(1)">x</a> <a href="https://ok.com">ok</a></p>',
+    );
+    expect(out).not.toMatch(/onclick|javascript:/i);
+    expect(out).toContain("<strong>b</strong>");
+    expect(out).toContain('href="https://ok.com"');
+  });
+
+  it("keeps only allowed image attributes", () => {
+    const out = sanitizeRichHtml('<p><img src="https://i/x.png" width="10" onerror="y()"></p>');
+    expect(out).toContain('width="10"');
+    expect(out).not.toMatch(/onerror/i);
+  });
+
+  it("keeps only pb-* class tokens on block containers", () => {
+    const out = sanitizeRichHtml(
+      '<section class="pb-grid btn-solid" data-block="grid">x</section>',
+    );
+    expect(out).toContain('class="pb-grid"');
+    expect(out).not.toContain("btn-solid");
+  });
+});
+
+describe("rateLimit", () => {
+  const makeKv = (): KVLike => {
+    const store = new Map<string, string>();
+    return {
+      async get(k) {
+        return store.get(k) ?? null;
+      },
+      async put(k, v) {
+        store.set(k, v);
+      },
+    };
+  };
+
+  it("allows under the limit and blocks once reached", async () => {
+    const kv = makeKv();
+    expect((await rateLimit(kv, "ip", 2, 60)).ok).toBe(true);
+    expect((await rateLimit(kv, "ip", 2, 60)).ok).toBe(true);
+    expect((await rateLimit(kv, "ip", 2, 60)).ok).toBe(false);
+  });
+
+  it("fails open on any KV error", async () => {
+    const boom: KVLike = {
+      async get() {
+        throw new Error("kv down");
+      },
+      async put() {
+        throw new Error("kv down");
+      },
+    };
+    expect((await rateLimit(boom, "ip", 1, 60)).ok).toBe(true);
+  });
+});
+
+describe("matchRateRule", () => {
+  const rules: RateRule[] = [
+    {
+      name: "magic-link",
+      method: "POST",
+      match: (p) => p === "/api/auth/sign-in/magic-link",
+      limit: 5,
+      windowSec: 600,
+    },
+  ];
+
+  it("matches on method + path from the caller-supplied rules", () => {
+    expect(matchRateRule(rules, "POST", "/api/auth/sign-in/magic-link")?.name).toBe("magic-link");
+    expect(matchRateRule(rules, "GET", "/api/auth/sign-in/magic-link")).toBeNull();
+    expect(matchRateRule(rules, "POST", "/other")).toBeNull();
+  });
+});
+
+describe("getSessionSecret", () => {
+  const ok = { get: async () => "real-secret" };
+  const boom = {
+    get: async () => {
+      throw new Error("no store");
+    },
+  };
+
+  it("returns the stored secret", async () => {
+    expect(await getSessionSecret(ok, new URL("https://x.com"))).toBe("real-secret");
+  });
+
+  it("falls back to the dev secret on localhost only", async () => {
+    expect(await getSessionSecret(boom, new URL("http://localhost:4321"))).toBe(
+      "louise-dev-secret",
+    );
+    expect(await getSessionSecret(boom, new URL("http://127.0.0.1:4321"), "custom-dev")).toBe(
+      "custom-dev",
+    );
+  });
+
+  it("fails closed (re-throws) on a deployed host", async () => {
+    await expect(getSessionSecret(boom, new URL("https://prod.com"))).rejects.toThrow();
+  });
+});
+
+describe("louiseSecurityHeaders", () => {
+  it("sets the baseline headers on a deployed host", () => {
+    const res = louiseSecurityHeaders(new Response("x"), { hostname: "prod.com" });
+    expect(res.headers.get("x-frame-options")).toBe("DENY");
+    expect(res.headers.get("strict-transport-security")).toContain("max-age=31536000");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
+  it("is a no-op on localhost", () => {
+    const res = louiseSecurityHeaders(new Response("x"), { hostname: "localhost" });
+    expect(res.headers.get("x-frame-options")).toBeNull();
+  });
+});
+
+describe("rewriteCspStyleSrc", () => {
+  it("rewrites only style-src, leaving other directives intact", () => {
+    const res = new Response("x", {
+      headers: {
+        "content-security-policy": "default-src 'self'; style-src 'sha256-abc'; img-src https:",
+      },
+    });
+    rewriteCspStyleSrc(res, "'self' 'unsafe-inline'");
+    const csp = res.headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("style-src 'self' 'unsafe-inline'");
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("img-src https:");
+    expect(csp).not.toContain("sha256-abc");
+  });
+
+  it("is a no-op when there is no CSP header", () => {
+    const res = new Response("x");
+    rewriteCspStyleSrc(res, "'self'");
+    expect(res.headers.get("content-security-policy")).toBeNull();
+  });
+});
