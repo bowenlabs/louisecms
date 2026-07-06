@@ -45,6 +45,7 @@ export default {
     entry: [
       "src/core/auth/index.ts",
       "src/client/index.ts",
+      "src/client/drawer/index.ts",
       "src/core/cms/index.ts",
       "src/core/db/index.ts",
       "src/core/commerce/index.ts",
@@ -70,6 +71,7 @@ export default {
         /^drizzle-orm(\/|$)/,
         /^better-auth(\/|$)/,
         /^@better-auth\/(passkey|core)(\/|$)/,
+        /^@tanstack\/solid-query(\/|$)/,
       ],
     },
   },

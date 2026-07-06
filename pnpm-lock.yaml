@@ -26,6 +26,9 @@ importers:
       '@prosekit/pm':
         specifier: ^0.1.18
         version: 0.1.18
+      '@tanstack/solid-query':
+        specifier: ^5.101.2
+        version: 5.101.2(solid-js@1.9.14)
       better-auth:
         specifier: ^1.6.23
         version: 1.6.23(@cloudflare/workers-types@5.20260705.1)(drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260705.1)(kysely@0.29.3))(solid-js@1.9.14)(vitest@3.2.6(@types/debug@4.1.13)(@types/node@24.13.2)(happy-dom@17.6.3)(lightningcss@1.32.0))
@@ -1441,6 +1444,14 @@ packages:
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
+
+  '@tanstack/query-core@5.101.2':
+    resolution: {integrity: sha512-hH5MLoJhF7KaIGd7q3xTXGXvslI+GYlM1Z/35aSHHWaCJWB7XvTSHYuV3eM7tw+aE0mT/xMro4M4Q9rCGHT0lw==}
+
+  '@tanstack/solid-query@5.101.2':
+    resolution: {integrity: sha512-IbCeM23gEbU0lW4wWFQhS4ELjgdmVXjhyCUh8pFemdMIuA5UswlkqEMryEE+lCMtxLS7m0oN1yWMocKi7vwXdw==}
+    peerDependencies:
+      solid-js: ^1.6.0
 
   '@tybys/wasm-util@0.10.3':
     resolution: {integrity: sha512-F3fo1MYrRJYL3zER0OUOmkutjr1Vp23m7OsSgp7nq4SP6OqX6C/56XFIPAl5bt3zaBRjmW7SGz3u/6LwFpYcOg==}
@@ -5328,6 +5339,13 @@ snapshots:
   '@speed-highlight/core@1.2.17': {}
 
   '@standard-schema/spec@1.1.0': {}
+
+  '@tanstack/query-core@5.101.2': {}
+
+  '@tanstack/solid-query@5.101.2(solid-js@1.9.14)':
+    dependencies:
+      '@tanstack/query-core': 5.101.2
+      solid-js: 1.9.14
 
   '@tybys/wasm-util@0.10.3':
     dependencies:
