@@ -1,6 +1,7 @@
 // @ts-check
 import cloudflare from "@astrojs/cloudflare";
 import starlight from "@astrojs/starlight";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "astro/config";
 
 // louisecms.com — a single Astro app deployed to Cloudflare Workers.
@@ -16,6 +17,10 @@ export default defineConfig({
   site: "https://louisecms.com",
   output: "server",
   adapter: cloudflare(),
+  // Tailwind v4 + daisyUI power the public landing's `louise` site theme. The
+  // plugin only emits into stylesheets that `@import "tailwindcss"` (just
+  // src/styles/louise.css, imported by the landing), so Starlight is untouched.
+  vite: { plugins: [tailwindcss()] },
   integrations: [
     starlight({
       title: "Louise CMS",
@@ -40,7 +45,7 @@ export default defineConfig({
           items: [{ autogenerate: { directory: "docs/reference" } }],
         },
       ],
-      customCss: ["./src/styles/docs.css"],
+      customCss: ["louisecms/theme/fonts.css", "./src/styles/docs.css"],
     }),
   ],
 });
