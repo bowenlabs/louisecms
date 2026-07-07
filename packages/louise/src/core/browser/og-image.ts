@@ -18,11 +18,10 @@ import type { OgImageCache, OgRenderer } from "./types.js";
  *  bust the cache when a page's content changes; not security-sensitive. */
 async function contentHash(content: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content));
-  // Array.from's map produces a real string[] — Uint8Array.prototype.map would
-  // coerce the hex strings back to numbers.
-  return Array.from(new Uint8Array(digest).slice(0, 8), (b) => b.toString(16).padStart(2, "0")).join(
-    "",
-  );
+  // Spread to a real number[] first: Uint8Array.prototype.map would coerce the
+  // hex strings back to numbers, so map on the plain array instead.
+  const bytes = Array.from(new Uint8Array(digest).slice(0, 8));
+  return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 export interface OgCacheKeyOptions {
