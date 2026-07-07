@@ -8,9 +8,9 @@
 //
 // Plugins, always on: magic-link (studio sign-in, allowlist-gated in the route
 // handler), admin (owner/editor roles), passkey (WebAuthn — rpID is derived
-// per request from `baseURL`, so a multi-tenant deployment gets the correct
-// origin-bound relying party for each tenant). Captcha (Turnstile) mounts only
-// when configured. Customer email/password + extra user fields are opt-in.
+// per request from `baseURL`, so passkeys bind to the site's own origin, dev
+// and prod alike). Captcha (Turnstile) mounts only when configured. Customer
+// email/password + extra user fields are opt-in.
 
 import { passkey } from "@better-auth/passkey";
 import { betterAuth } from "better-auth";
@@ -44,7 +44,7 @@ export interface LouiseAuthConfig {
   /** Render the magic-link email body (site branding). */
   renderMagicLinkEmail: (args: { url: string; toEmail: string }) => MagicLinkEmail;
   /** Resolve the admin allowlist. Defaults to `OWNER_EMAIL`/`ENGINEER_EMAIL`
-   *  from env; a platform passes a per-tenant `tenant_admins` lookup. */
+   *  from env; override to source it elsewhere (e.g. a DB lookup). */
   resolveAdmins?: (env: LouiseAuthEnv) => string[] | Promise<string[]>;
   /** Enable customer email/password sign-in/up. Omit for an admin-only studio. */
   customers?: { minPasswordLength?: number; requireEmailVerification?: boolean };
@@ -100,7 +100,7 @@ export interface LouiseAuth {
 }
 
 /**
- * Construct the request-scoped auth instance. `baseURL` is the tenant origin
+ * Construct the request-scoped auth instance. `baseURL` is the site origin
  * (Better Auth signs callback URLs and binds the passkey rpID against it);
  * derive it from the request.
  */
