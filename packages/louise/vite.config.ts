@@ -55,6 +55,7 @@ export default {
       "src/core/email/index.ts",
       "src/core/queues/index.ts",
       "src/core/security/index.ts",
+      "src/core/worker/index.ts",
       "src/core/errors.ts",
     ],
     format: ["esm"],

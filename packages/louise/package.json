@@ -80,6 +80,10 @@
       "types": "./dist/core/security/index.d.ts",
       "import": "./dist/core/security/index.js"
     },
+    "./worker": {
+      "types": "./dist/core/worker/index.d.ts",
+      "import": "./dist/core/worker/index.js"
+    },
     "./errors": {
       "types": "./dist/core/errors.d.ts",
       "import": "./dist/core/errors.js"
