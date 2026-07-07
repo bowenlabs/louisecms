@@ -1,8 +1,11 @@
 /* Louise brand accent for the Starlight docs.
    Palette from the BowenLabs brand system: blue #1481ef primary, yellow
    #f3ae29 accent, green #8ebe59 success — the same tokens the editor theme
-   (`louisecms/theme`) ships. */
+   (`louisecms/theme`) ships. Brand type is loaded via the package's
+   `louisecms/theme/fonts.css` (see astro.config customCss): Roboto Flex body,
+   Hepta Slab headings — not Starlight's defaults. */
 :root {
+  --sl-font: "Roboto Flex", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --sl-color-accent-low: #08284a;
   --sl-color-accent: #1481ef;
   --sl-color-accent-high: #a9d1ff;
@@ -18,4 +21,11 @@
 /* Slightly warmer code accents to match the brand yellow. */
 .sl-markdown-content :not(pre) > code {
   border-color: color-mix(in srgb, #1481ef 25%, transparent);
+}
+
+/* Headings in the brand slab; body copy stays Roboto Flex via --sl-font. */
+.sl-markdown-content :is(h1, h2, h3, h4),
+.content-panel h1,
+h1#_top {
+  font-family: "Hepta Slab", "Iowan Old Style", Georgia, serif;
 }

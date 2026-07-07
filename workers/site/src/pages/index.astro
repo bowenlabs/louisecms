@@ -1,36 +1,58 @@
 ---
-// louisecms.com landing page (scaffold).
-// Deliberately self-contained — no shared layout yet — so the marketing site
-// can grow its own design later without entangling the Starlight docs theme.
+// louisecms.com landing page.
+// Public site theme: Tailwind v4 + daisyUI, with the `louise` theme defined in
+// src/styles/louise.css (auto light/dark via prefers-color-scheme). Brand type
+// comes from the package (`louisecms/theme/fonts.css`, applied via `.louise-type`)
+// and the hero mark is the real `louise-mark.svg`. Icons are Phosphor, inlined
+// raw so they inherit `currentColor` — no icon font, no runtime fetch.
+import "louisecms/theme/fonts.css";
+import "../styles/louise.css";
+import louiseMark from "../assets/louise-mark.svg?raw";
+import bookOpen from "@phosphor-icons/core/assets/regular/book-open-text.svg?raw";
+import githubLogo from "@phosphor-icons/core/assets/regular/github-logo.svg?raw";
+import pencil from "@phosphor-icons/core/assets/regular/pencil-simple.svg?raw";
+import textAa from "@phosphor-icons/core/assets/regular/text-aa.svg?raw";
+import lightning from "@phosphor-icons/core/assets/regular/lightning.svg?raw";
+import plugs from "@phosphor-icons/core/assets/regular/plugs-connected.svg?raw";
+import pkg from "@phosphor-icons/core/assets/regular/package.svg?raw";
+import cart from "@phosphor-icons/core/assets/regular/shopping-cart-simple.svg?raw";
+import shield from "@phosphor-icons/core/assets/regular/shield-check.svg?raw";
 export const prerender = true;
 
 const year = new Date().getFullYear();
 const features = [
   {
+    icon: pencil,
     title: "Edit in place",
     body: "Editable regions carry a data-louise-field marker; in edit mode the client makes each one editable right where it lives.",
   },
   {
+    icon: textAa,
     title: "Real rich text",
     body: "A ProseKit editor for prose — not a JSON form. Storage is sanitized HTML, rendered straight back onto the page.",
   },
   {
+    icon: lightning,
     title: "V8-native",
     body: "No Node runtime, no React. Everything runs in workerd and deploys to Cloudflare Workers at the edge.",
   },
   {
+    icon: plugs,
     title: "Bring your own bindings",
     body: "D1, R2, Queues, Email are passed in — Louise never imports cloudflare:workers itself, and has no opinion about your schema or framework.",
   },
   {
+    icon: pkg,
     title: "Tree-shakeable",
     body: "One ESM package with granular subpath exports — import only the primitive a route needs.",
   },
   {
+    icon: cart,
     title: "Commerce included",
     body: "Stripe, Square, and Fourthwall clients — raw fetch + crypto.subtle over a shared signature/money base. No SDKs.",
   },
   {
+    icon: shield,
     title: "Auth & security",
     body: "Opt-in magic-link + passkey studio sign-in (Better Auth), a rich-text sanitizer, and a KV rate limiter — one fix protects every site.",
   },
@@ -49,195 +71,74 @@ const features = [
     />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   </head>
-  <body>
-    <main>
-      <section class="hero">
-        <div class="mark" aria-hidden="true">L</div>
-        <h1>Louise CMS</h1>
-        <p class="tagline">
-          A V8-native, inline <em>edit-on-the-live-page</em> CMS for Cloudflare
-          Workers.
+  <body class="louise-type min-h-screen bg-base-100 text-base-content antialiased">
+    <main class="mx-auto max-w-4xl px-5">
+      <section class="pt-24 pb-12 text-center">
+        <div
+          class="mx-auto mb-6 h-[68px] w-[68px] drop-shadow-lg [&>svg]:h-full [&>svg]:w-full"
+          aria-hidden="true"
+          set:html={louiseMark}
+        />
+        <h1 class="mb-3 text-5xl leading-none font-black tracking-tight md:text-6xl">
+          Louise CMS
+        </h1>
+        <p class="mx-auto mb-2 max-w-xl text-xl">
+          A V8-native, inline <em class="text-primary not-italic"
+            >edit-on-the-live-page</em
+          > CMS for Cloudflare Workers.
         </p>
-        <p class="sub">
+        <p class="mx-auto mb-8 max-w-lg text-base-content/60">
           No separate admin app. No JSON forms for prose. Log in, and the live
           site becomes editable in place.
         </p>
-        <div class="cta">
-          <a class="btn primary" href="/docs">Read the docs</a>
-          <a class="btn ghost" href="https://github.com/bowenlabs/louisecms"
-            >GitHub</a
+        <div class="mb-8 flex flex-wrap justify-center gap-3">
+          <a
+            class="btn btn-primary [&>svg]:h-5 [&>svg]:w-5"
+            href="/docs"
           >
+            <Fragment set:html={bookOpen} />Read the docs
+          </a>
+          <a
+            class="btn btn-outline [&>svg]:h-5 [&>svg]:w-5"
+            href="https://github.com/bowenlabs/louisecms"
+          >
+            <Fragment set:html={githubLogo} />GitHub
+          </a>
         </div>
-        <pre class="install"><code>npm install louisecms</code></pre>
+        <pre
+          class="inline-block rounded-field border border-base-300 bg-primary/10 px-4 py-3 font-mono text-sm"><code>npm install louisecms</code></pre>
       </section>
 
-      <section class="features" aria-label="Features">
+      <section
+        class="grid grid-cols-[repeat(auto-fit,minmax(16rem,1fr))] gap-4 pb-16"
+        aria-label="Features"
+      >
         {
           features.map((f) => (
-            <article class="card">
-              <h2>{f.title}</h2>
-              <p>{f.body}</p>
+            <article class="card rounded-box border border-base-300 bg-base-100 p-6">
+              <div
+                class="mb-3 text-primary [&>svg]:h-7 [&>svg]:w-7"
+                aria-hidden="true"
+                set:html={f.icon}
+              />
+              <h2 class="mb-2 text-lg font-black">{f.title}</h2>
+              <p class="text-sm text-base-content/60">{f.body}</p>
             </article>
           ))
         }
       </section>
 
-      <footer>
+      <footer
+        class="border-t border-base-300 py-10 text-center text-sm text-base-content/60"
+      >
         <p>
-          <a href="/docs">Documentation</a> · <a
+          <a class="link link-hover text-primary" href="/docs">Documentation</a>
+          · <a
+            class="link link-hover text-primary"
             href="https://github.com/bowenlabs/louisecms">Source</a
           > · MIT © {year} BowenLabs
         </p>
       </footer>
     </main>
-
-    <style>
-      :root {
-        --blue: #1481ef;
-        --blue-ink: #08284a;
-        --gold: #f3ae29;
-        --ink: #14181f;
-        --muted: #5b6472;
-        --line: #e6e9ef;
-        --bg: #ffffff;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --ink: #eef1f6;
-          --muted: #9aa4b2;
-          --line: #232a35;
-          --bg: #0e1117;
-        }
-      }
-      * {
-        box-sizing: border-box;
-      }
-      html {
-        color-scheme: light dark;
-      }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--ink);
-        font: 16px/1.6
-          "Roboto Flex",
-          system-ui,
-          -apple-system,
-          Segoe UI,
-          sans-serif;
-        -webkit-font-smoothing: antialiased;
-      }
-      main {
-        max-width: 62rem;
-        margin: 0 auto;
-        padding: 0 1.25rem;
-      }
-      .hero {
-        text-align: center;
-        padding: 5.5rem 0 3rem;
-      }
-      .mark {
-        width: 68px;
-        height: 68px;
-        margin: 0 auto 1.5rem;
-        border-radius: 16px;
-        background: var(--blue);
-        color: #fff;
-        font-weight: 900;
-        font-size: 2.2rem;
-        display: grid;
-        place-items: center;
-        box-shadow: 0 8px 24px -8px color-mix(in srgb, var(--blue) 60%, transparent);
-      }
-      h1 {
-        font-size: clamp(2.4rem, 6vw, 3.6rem);
-        line-height: 1.05;
-        margin: 0 0 0.75rem;
-        letter-spacing: -0.02em;
-      }
-      .tagline {
-        font-size: clamp(1.1rem, 2.6vw, 1.4rem);
-        margin: 0 auto 0.5rem;
-        max-width: 40rem;
-      }
-      .tagline em {
-        color: var(--blue);
-        font-style: normal;
-      }
-      .sub {
-        color: var(--muted);
-        max-width: 34rem;
-        margin: 0 auto 2rem;
-      }
-      .cta {
-        display: flex;
-        gap: 0.75rem;
-        justify-content: center;
-        flex-wrap: wrap;
-        margin-bottom: 2rem;
-      }
-      .btn {
-        display: inline-block;
-        padding: 0.7rem 1.4rem;
-        border-radius: 10px;
-        font-weight: 600;
-        text-decoration: none;
-        border: 1px solid transparent;
-        transition:
-          transform 0.08s ease,
-          background 0.15s ease;
-      }
-      .btn:active {
-        transform: translateY(1px);
-      }
-      .btn.primary {
-        background: var(--blue);
-        color: #fff;
-      }
-      .btn.ghost {
-        border-color: var(--line);
-        color: var(--ink);
-      }
-      .install {
-        display: inline-block;
-        margin: 0 auto;
-        padding: 0.8rem 1.1rem;
-        background: color-mix(in srgb, var(--blue) 8%, transparent);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        font-family: "Roboto Mono", ui-monospace, SFMono-Regular, monospace;
-        font-size: 0.95rem;
-      }
-      .features {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-        gap: 1rem;
-        padding: 2rem 0 4rem;
-      }
-      .card {
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 1.4rem;
-      }
-      .card h2 {
-        font-size: 1.15rem;
-        margin: 0 0 0.5rem;
-      }
-      .card p {
-        color: var(--muted);
-        margin: 0;
-        font-size: 0.95rem;
-      }
-      footer {
-        border-top: 1px solid var(--line);
-        padding: 2rem 0 3rem;
-        text-align: center;
-        color: var(--muted);
-        font-size: 0.9rem;
-      }
-      a {
-        color: var(--blue);
-      }
-    </style>
   </body>
 </html>
