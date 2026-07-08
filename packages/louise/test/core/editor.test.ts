@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { EditorSession } from "../../src/core/auth/index.js";
 import { inquiries, media, pages, siteSettings } from "../../src/core/db/index.js";
 import {
+  blobSettingsRoute,
   inquiriesRoute,
   mediaRoute,
+  mergeBlobPatch,
   pagesRoute,
   partitionSettingsPatch,
   pickFields,
@@ -207,6 +209,82 @@ describe("settingsRoute (guard + dispatch)", () => {
     const { db } = makeD1(() => []);
     const res = await settingsRoute(cfg())(
       new Request(settingsUrl, { method: "DELETE" }),
+      { DB: db },
+      ctx,
+    );
+    expect(res?.status).toBe(405);
+  });
+});
+
+describe("mergeBlobPatch", () => {
+  const allow = {
+    nav: (v: unknown) => v,
+    footerBlurb: (v: unknown) => String(v ?? "").slice(0, 5),
+  };
+
+  it("sanitizes + merges allowlisted keys and ignores the rest", () => {
+    const out = mergeBlobPatch(
+      { nav: [{ href: "/old" }], keep: 1 },
+      { nav: [{ href: "/new" }], footerBlurb: "hello world", bogus: "x" },
+      allow,
+    );
+    expect(out.blob).toEqual({ nav: [{ href: "/new" }], footerBlurb: "hello", keep: 1 });
+    expect(out.ignored).toEqual(["bogus"]);
+    expect(out.changed).toBe(2);
+  });
+
+  it("reports changed=0 when nothing is allowlisted (never mutates input)", () => {
+    const blob = { nav: [] };
+    const out = mergeBlobPatch(blob, { bogus: 1 }, allow);
+    expect(out.changed).toBe(0);
+    expect(out.ignored).toEqual(["bogus"]);
+    expect(out.blob).not.toBe(blob);
+    expect(out.blob).toEqual({ nav: [] });
+  });
+});
+
+describe("blobSettingsRoute (guard + dispatch)", () => {
+  const url = "https://site.example/api/louise/settings";
+  const cfg = () => ({
+    table: siteSettings,
+    column: "data",
+    allow: { nav: (v: unknown) => v },
+    resolveEditor: () => editor,
+  });
+
+  it("passes through a non-matching path", async () => {
+    const { db } = makeD1(() => []);
+    const res = await blobSettingsRoute(cfg())(
+      new Request("https://site.example/other"),
+      { DB: db },
+      ctx,
+    );
+    expect(res).toBeUndefined();
+  });
+
+  it("401s an unauthenticated read before touching the DB", async () => {
+    const { db, calls } = makeD1(() => []);
+    const route = blobSettingsRoute({ ...cfg(), resolveEditor: () => null });
+    const res = await route(new Request(url, { method: "GET" }), { DB: db }, ctx);
+    expect(res?.status).toBe(401);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("403s a cross-origin write (CSRF) before touching the DB", async () => {
+    const { db, calls } = makeD1(() => []);
+    const res = await blobSettingsRoute(cfg())(
+      new Request(url, { method: "PATCH", headers: { origin: "https://evil.example" } }),
+      { DB: db },
+      ctx,
+    );
+    expect(res?.status).toBe(403);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("405s an unsupported method", async () => {
+    const { db } = makeD1(() => []);
+    const res = await blobSettingsRoute(cfg())(
+      new Request(url, { method: "DELETE" }),
       { DB: db },
       ctx,
     );

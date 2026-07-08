@@ -24,6 +24,12 @@ export {
   settingsRoute,
 } from "./settings.js";
 export {
+  type BlobSanitize,
+  blobSettingsRoute,
+  type BlobSettingsRouteConfig,
+  mergeBlobPatch,
+} from "./settings-blob.js";
+export {
   type ResolvedField,
   resolveFieldValue,
   type SaveCollectionConfig,
