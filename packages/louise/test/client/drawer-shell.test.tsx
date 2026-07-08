@@ -310,6 +310,33 @@ describe("InquiriesPanel — list + delete", () => {
       expect(String(del![0])).toContain("id=7");
     });
   });
+
+  it("renders the framework inquiriesColumns (firstName/lastName/regarding) with no custom renderRow", async () => {
+    stubFetch((url, method) => {
+      if (url.endsWith("/api/louise/inquiries") && method === "GET") {
+        return jsonResponse({
+          inquiries: [
+            {
+              id: 3,
+              firstName: "Grace",
+              lastName: "Hopper",
+              email: "grace@navy.mil",
+              regarding: "Commission",
+              message: "A portrait, please",
+            },
+          ],
+        });
+      }
+      return jsonResponse({ ok: true });
+    });
+    mount(() => <InquiriesPanel />);
+
+    // Name composed from firstName + lastName (not the email fallback).
+    await vi.waitFor(() => expect(host.textContent).toContain("Grace Hopper"));
+    // Subject surfaced in the subline, message in the body.
+    expect(host.textContent).toContain("Commission");
+    expect(host.textContent).toContain("A portrait, please");
+  });
 });
 
 describe("PagesPanel — list + built-in pages", () => {
