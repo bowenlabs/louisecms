@@ -190,7 +190,16 @@ export function mountLouise(opts: MountLouiseOptions): void {
       // field's text, its invisible payload must never round-trip into stored
       // HTML / ProseMirror JSON (it would compound on every save). No-op when
       // stega isn't in use.
-      const field = mountRichText(el, () => markDirty(fieldKey, () => stegaClean(field.getHTML())));
+      // `data-louise-blocks` opts the field into the full page-builder block set
+      // (rows/columns, gallery, hero, …) — so a page body can be built in place
+      // on the live page, not just in the drawer.
+      const blocks = el.dataset.louiseBlocks === "1";
+      const field = mountRichText(
+        el,
+        () => markDirty(fieldKey, () => stegaClean(field.getHTML())),
+        undefined,
+        { blocks },
+      );
     } else {
       // Plain-text field: contenteditable, single line.
       el.setAttribute("contenteditable", "plaintext-only");

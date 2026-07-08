@@ -17,7 +17,12 @@ import plugs from "@phosphor-icons/core/assets/regular/plugs-connected.svg?raw";
 import pkg from "@phosphor-icons/core/assets/regular/package.svg?raw";
 import cart from "@phosphor-icons/core/assets/regular/shopping-cart-simple.svg?raw";
 import shield from "@phosphor-icons/core/assets/regular/shield-check.svg?raw";
-export const prerender = true;
+import LouiseEditor from "../components/LouiseEditor.astro";
+// SSR (not prerendered): the marketing app is `output: server` for Louise, and a
+// prerendered `/index.html` asset would shadow the docs root on
+// docs.louisecms.com (both map to `/`). Rendering per-request keeps the docs
+// subdomain's `/` free for the Worker's /_docs dispatch (see worker.ts).
+export const prerender = false;
 
 const year = new Date().getFullYear();
 const features = [
@@ -94,7 +99,7 @@ const features = [
         <div class="mb-8 flex flex-wrap justify-center gap-3">
           <a
             class="btn btn-primary [&>svg]:h-5 [&>svg]:w-5"
-            href="/docs"
+            href="https://docs.louisecms.com"
           >
             <Fragment set:html={bookOpen} />Read the docs
           </a>
@@ -132,7 +137,7 @@ const features = [
         class="border-t border-base-300 py-10 text-center text-sm text-base-content/60"
       >
         <p>
-          <a class="link link-hover text-primary" href="/docs">Documentation</a>
+          <a class="link link-hover text-primary" href="https://docs.louisecms.com">Documentation</a>
           · <a
             class="link link-hover text-primary"
             href="https://github.com/bowenlabs/louisecms">Source</a
@@ -140,5 +145,6 @@ const features = [
         </p>
       </footer>
     </main>
+    <LouiseEditor />
   </body>
 </html>
