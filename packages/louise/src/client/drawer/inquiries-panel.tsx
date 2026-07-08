@@ -40,7 +40,10 @@ const fmtDate = (v: unknown) => {
  *  back to the common single-field variants other sites use. */
 function DefaultRow(props: { row: InquiryRow }) {
   const name = () => {
-    const full = [pick(props.row, ["firstName", "first_name"]), pick(props.row, ["lastName", "last_name"])]
+    const full = [
+      pick(props.row, ["firstName", "first_name"]),
+      pick(props.row, ["lastName", "last_name"]),
+    ]
       .filter(Boolean)
       .join(" ")
       .trim();

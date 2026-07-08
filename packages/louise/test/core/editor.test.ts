@@ -627,7 +627,11 @@ describe("listMediaRoute (registry-less + per-request scope)", () => {
     const fd = new FormData();
     fd.set("file", new File([new Uint8Array(PNG_HEADER)], "p.png", { type: "image/png" }));
     if (scope !== undefined) fd.set("scope", scope);
-    return new Request(mediaBase, { method: "POST", body: fd, headers: { origin: "https://site.example" } });
+    return new Request(mediaBase, {
+      method: "POST",
+      body: fd,
+      headers: { origin: "https://site.example" },
+    });
   };
 
   it("lists straight from the R2 bucket without touching D1", async () => {
