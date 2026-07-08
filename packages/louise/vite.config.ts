@@ -49,6 +49,7 @@ export default {
       "src/core/cms/index.ts",
       "src/core/cms/stega.ts",
       "src/core/db/index.ts",
+      "src/core/editor/index.ts",
       "src/core/commerce/index.ts",
       "src/core/commerce/fourthwall.ts",
       "src/core/commerce/square.ts",
