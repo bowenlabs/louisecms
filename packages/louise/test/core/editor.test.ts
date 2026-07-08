@@ -4,6 +4,7 @@ import { inquiries, media, pages, siteSettings } from "../../src/core/db/index.j
 import {
   blobSettingsRoute,
   inquiriesRoute,
+  listMediaRoute,
   mediaRoute,
   mergeBlobPatch,
   pagesRoute,
@@ -598,6 +599,81 @@ describe("mediaRoute", () => {
       ctx,
     );
     expect(res?.status).toBe(405);
+  });
+});
+
+// A bucket that also implements list(), for the registry-less listMediaRoute.
+function makeListBucket(objects: { key: string; size: number; uploaded: Date }[] = []) {
+  const puts: { key: string }[] = [];
+  const deletes: string[] = [];
+  const bucket = {
+    async list() {
+      return { objects, truncated: false as const };
+    },
+    async put(key: string) {
+      puts.push({ key });
+    },
+    async delete(key: string) {
+      deletes.push(key);
+    },
+  };
+  return { bucket: bucket as unknown as R2Bucket, puts, deletes };
+}
+
+describe("listMediaRoute (registry-less + per-request scope)", () => {
+  const mediaBase = "https://site.example/api/louise/media";
+  const MEDIA_URL = "https://media.example.com";
+  const uploadReq = (scope?: string) => {
+    const fd = new FormData();
+    fd.set("file", new File([new Uint8Array(PNG_HEADER)], "p.png", { type: "image/png" }));
+    if (scope !== undefined) fd.set("scope", scope);
+    return new Request(mediaBase, { method: "POST", body: fd, headers: { origin: "https://site.example" } });
+  };
+
+  it("lists straight from the R2 bucket without touching D1", async () => {
+    const { db, calls } = makeD1(() => []);
+    const { bucket } = makeListBucket([{ key: "web/a.png", size: 12, uploaded: new Date() }]);
+    const route = listMediaRoute({ resolveEditor: () => editor });
+    const res = await route(new Request(mediaBase), { DB: db, MEDIA: bucket, MEDIA_URL }, ctx);
+    expect(res?.status).toBe(200);
+    const body = (await res?.json()) as { media: { key: string; url: string }[] };
+    expect(body.media[0]?.url).toBe("https://media.example.com/web/a.png");
+    expect(calls).toHaveLength(0); // no registry table read
+  });
+
+  it("uploads under an allowlisted scope from the form", async () => {
+    const { db } = makeD1(() => []);
+    const { bucket, puts } = makeListBucket();
+    const route = listMediaRoute({ resolveEditor: () => editor, scopes: ["web", "print"] });
+    const res = await route(uploadReq("print"), { DB: db, MEDIA: bucket, MEDIA_URL }, ctx);
+    expect(res?.status).toBe(201);
+    expect(puts[0]?.key.startsWith("print/")).toBe(true);
+  });
+
+  it("falls back to the default scope when the form sends one not allowlisted", async () => {
+    const { db } = makeD1(() => []);
+    const { bucket, puts } = makeListBucket();
+    const route = listMediaRoute({ resolveEditor: () => editor, scopes: ["web", "print"] });
+    const res = await route(uploadReq("evil"), { DB: db, MEDIA: bucket, MEDIA_URL }, ctx);
+    expect(res?.status).toBe(201);
+    expect(puts[0]?.key.startsWith("web/")).toBe(true);
+  });
+
+  it("deletes an unreferenced key from R2 (no registry write)", async () => {
+    const { db, calls } = makeD1(() => []);
+    const { bucket, deletes } = makeListBucket();
+    const route = listMediaRoute({ resolveEditor: () => editor });
+    const res = await route(
+      new Request(`${mediaBase}?key=web/a.png`, {
+        method: "DELETE",
+        headers: { origin: "https://site.example" },
+      }),
+      { DB: db, MEDIA: bucket, MEDIA_URL },
+      ctx,
+    );
+    expect(res?.status).toBe(200);
+    expect(deletes).toEqual(["web/a.png"]);
+    expect(calls).toHaveLength(0);
   });
 });
 
