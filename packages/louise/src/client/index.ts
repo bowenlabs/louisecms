@@ -323,12 +323,21 @@ export function mountLouise(opts: MountLouiseOptions): void {
       // (rows/columns, gallery, hero, …) — so a page body can be built in place
       // on the live page, not just in the drawer.
       const blocks = el.dataset.louiseBlocks === "1";
-      const field = mountRichText(
-        el,
-        () => markDirty(fieldKey, () => stegaClean(field.getHTML())),
-        undefined,
-        { blocks },
-      );
+      // Isolate + surface editor-init failures: mountRichText clears el and
+      // Solid-renders the editor, so a throw here (e.g. a ProseKit error during
+      // render) would otherwise leave the field blank AND abort the whole field
+      // loop as an unhandled rejection — silently, with no editor. Log it and
+      // move on so one bad field can't take down the rest of the page.
+      try {
+        const field = mountRichText(
+          el,
+          () => markDirty(fieldKey, () => stegaClean(field.getHTML())),
+          undefined,
+          { blocks },
+        );
+      } catch (err) {
+        console.error(`[louise] rich-text editor failed to mount for ${fieldKey}`, err);
+      }
     } else {
       // Plain-text field: contenteditable, single line.
       el.setAttribute("contenteditable", "plaintext-only");
