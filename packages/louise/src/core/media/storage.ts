@@ -89,6 +89,19 @@ export function mediaUrl(base: string, key: string): string {
 }
 
 /**
+ * Whether `value` is a URL served from this site's media base (`MEDIA_URL`) — an
+ * asset in the media library rather than an external hotlink. A prefix match on
+ * the normalized base (what {@link mediaUrl} builds is always `base` + `/` +
+ * key). The empty string is NOT media; a caller that treats "unset" as valid
+ * checks that separately. This is the one definition of "media-backed" the
+ * sanitizer, the sections validator, and the settings route all enforce with.
+ */
+export function isMediaUrl(base: string, value: string): boolean {
+  const b = base.replace(/\/$/, "");
+  return b.length > 0 && value.startsWith(`${b}/`);
+}
+
+/**
  * List everything in the bucket, newest first, so a media picker can browse
  * what's actually stored. Pages through R2's 1000-object limit so nothing is
  * hidden. `base` is the public media URL used to build each item's `url`.

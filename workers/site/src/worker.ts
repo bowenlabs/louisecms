@@ -129,6 +129,14 @@ async function serveDocs(url: URL, request: Request, env: WorkerEnv): Promise<Re
 
 const resolveEditor = (request: Request, env: WorkerEnv) => resolveEditorFromCookie(request, env);
 
+/** The site's media base — matches `vars.MEDIA_URL` in wrangler.jsonc. Every
+ *  editor image (sections, settings, page body) is validated against this so
+ *  only media-library assets are stored, never an external hotlink (#47). */
+const MEDIA_BASE = "/media";
+
+/** Setting keys that hold an image URL and must resolve to a media asset. */
+const SETTINGS_IMAGE_KEYS = ["logoUrl", "faviconUrl", "defaultOgImageUrl"];
+
 /** Base `site_settings` columns the drawer Settings panel may write. */
 const SETTINGS_COLUMNS = [
   "siteName",
@@ -161,7 +169,10 @@ const editorRoutes: WorkerRoute<WorkerEnv>[] = [
     resolveEditor,
     validate: async (data) => {
       if ("sections" in data) {
-        await assertValidSections(SECTIONS, data.sections, { operation: "update" });
+        await assertValidSections(SECTIONS, data.sections, {
+          operation: "update",
+          mediaBase: MEDIA_BASE,
+        });
       }
     },
   }),
@@ -179,7 +190,10 @@ const editorRoutes: WorkerRoute<WorkerEnv>[] = [
     fields: [...DEFAULT_PAGE_FIELDS, "sections"],
     validate: async (data, ctx) => {
       if ("sections" in data) {
-        await assertValidSections(SECTIONS, data.sections, { operation: ctx.operation });
+        await assertValidSections(SECTIONS, data.sections, {
+          operation: ctx.operation,
+          mediaBase: MEDIA_BASE,
+        });
       }
     },
   }),
@@ -196,7 +210,13 @@ const editorRoutes: WorkerRoute<WorkerEnv>[] = [
       },
     },
   }),
-  settingsRoute({ table: siteSettings, resolveEditor, columns: SETTINGS_COLUMNS }),
+  settingsRoute({
+    table: siteSettings,
+    resolveEditor,
+    columns: SETTINGS_COLUMNS,
+    imageKeys: SETTINGS_IMAGE_KEYS,
+    mediaBase: MEDIA_BASE,
+  }),
   mediaRoute({
     table: media,
     resolveEditor,
