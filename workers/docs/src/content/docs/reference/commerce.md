@@ -23,12 +23,12 @@ import {
 } from "louisecms/commerce";
 ```
 
-| Export | Purpose |
-| --- | --- |
-| `Money` | `{ amount, currency }` — amount in the currency's minor unit (cents). |
-| `centsToMajor(cents)` | Minor units → major (`2500` → `25`). |
+| Export                               | Purpose                                                                                  |
+| ------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `Money`                              | `{ amount, currency }` — amount in the currency's minor unit (cents).                    |
+| `centsToMajor(cents)`                | Minor units → major (`2500` → `25`).                                                     |
 | `hmacSha256Hex` / `hmacSha256Base64` | HMAC-SHA256 of a message under a secret (Stripe uses hex; Square/Fourthwall use base64). |
-| `safeEqual(a, b)` | Constant-time-ish compare — use it to check a computed signature against a header value. |
+| `safeEqual(a, b)`                    | Constant-time-ish compare — use it to check a computed signature against a header value. |
 
 ## `louisecms/commerce/stripe`
 
@@ -46,12 +46,12 @@ import {
 } from "louisecms/commerce/stripe";
 ```
 
-| Export | Purpose |
-| --- | --- |
-| `createPaymentIntent(secretKey, items, …)` | Create a PaymentIntent over a multi-item cart. |
-| `retrievePaymentIntent(secretKey, id)` | Re-fetch a PaymentIntent (webhooks treat events as pointers). |
-| `verifyStripeSignature(body, header, secret)` | Verify a webhook signature before trusting the payload. |
-| `ensureStripeCustomer(secretKey, …)` | Reuse-or-create a customer. |
+| Export                                                     | Purpose                                                                               |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `createPaymentIntent(secretKey, items, …)`                 | Create a PaymentIntent over a multi-item cart.                                        |
+| `retrievePaymentIntent(secretKey, id)`                     | Re-fetch a PaymentIntent (webhooks treat events as pointers).                         |
+| `verifyStripeSignature(body, header, secret)`              | Verify a webhook signature before trusting the payload.                               |
+| `ensureStripeCustomer(secretKey, …)`                       | Reuse-or-create a customer.                                                           |
 | `createAndSendInvoice(...)` / `createLineItemInvoice(...)` | Hosted invoices with line items and automatic tax (when the customer has an address). |
 
 The Stripe API version is pinned in the module so an account-default upgrade
@@ -74,14 +74,14 @@ import {
 } from "louisecms/commerce/fourthwall";
 ```
 
-| Export | Purpose |
-| --- | --- |
-| `listCollections(token)` / `getCollectionProducts(...)` | Browse the storefront catalog. |
-| `getProduct(token, slug)` | Fetch a single product (or `null`). |
-| `listCatalog(...)` | The catalog list used to sync a product overlay. |
-| `lowestPrice(product)` | Cheapest variant price, for "from $X" display. |
-| `createCart(token, items)` | Create a cart; hand off to Fourthwall hosted checkout. |
-| `verifyFourthwallSignature(...)` | HMAC-verify an inbound order webhook. |
+| Export                                                  | Purpose                                                |
+| ------------------------------------------------------- | ------------------------------------------------------ |
+| `listCollections(token)` / `getCollectionProducts(...)` | Browse the storefront catalog.                         |
+| `getProduct(token, slug)`                               | Fetch a single product (or `null`).                    |
+| `listCatalog(...)`                                      | The catalog list used to sync a product overlay.       |
+| `lowestPrice(product)`                                  | Cheapest variant price, for "from $X" display.         |
+| `createCart(token, items)`                              | Create a cart; hand off to Fourthwall hosted checkout. |
+| `verifyFourthwallSignature(...)`                        | HMAC-verify an inbound order webhook.                  |
 
 The `Fw*` interfaces (`FwProduct`, `FwVariant`, `FwImage`, `FwMoney`, `FwStock`,
 `FwCollection`, …) type the storefront payloads.
@@ -127,17 +127,17 @@ import {
 } from "louisecms/commerce/square";
 ```
 
-| Area | Exports |
-| --- | --- |
-| **Config** | `SquareConfig` (`accessToken`, `environment`, `version`), `SQUARE_VERSION`, `centsToMajor` |
-| **Catalog** | `listCatalogItems`, `retrieveCatalogItem`, `retrieveVariationPrices`, `mapCatalogItem` |
-| **Inventory** | `retrieveInventoryCounts` |
-| **Orders** | `createOrder`, `retrieveOrder`, `searchOrdersByCustomer` |
-| **Payments** | `createPayment` — charge a Web Payments card token against an order. |
-| **Customers** | `searchCustomersByEmail`, `retrieveCustomer`, `createCustomer`, `ensureCustomer` |
-| **Cards & subscriptions** | `createCard`, `searchSubscriptionsByCustomer`, `createSubscription` |
-| **Loyalty** | `retrieveLoyaltyAccountByCustomer` |
-| **Webhooks** | `verifySquareSignature(url, body, header, key)` — note the URL is signed too. |
+| Area                      | Exports                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------ |
+| **Config**                | `SquareConfig` (`accessToken`, `environment`, `version`), `SQUARE_VERSION`, `centsToMajor` |
+| **Catalog**               | `listCatalogItems`, `retrieveCatalogItem`, `retrieveVariationPrices`, `mapCatalogItem`     |
+| **Inventory**             | `retrieveInventoryCounts`                                                                  |
+| **Orders**                | `createOrder`, `retrieveOrder`, `searchOrdersByCustomer`                                   |
+| **Payments**              | `createPayment` — charge a Web Payments card token against an order.                       |
+| **Customers**             | `searchCustomersByEmail`, `retrieveCustomer`, `createCustomer`, `ensureCustomer`           |
+| **Cards & subscriptions** | `createCard`, `searchSubscriptionsByCustomer`, `createSubscription`                        |
+| **Loyalty**               | `retrieveLoyaltyAccountByCustomer`                                                         |
+| **Webhooks**              | `verifySquareSignature(url, body, header, key)` — note the URL is signed too.              |
 
 The `Square*` interfaces (`SquareCatalogItem`, `SquareVariation`, `SquareOrder`,
 `SquarePayment`, `SquareCustomer`, `SquareCard`, `SquareLoyaltyAccount`,

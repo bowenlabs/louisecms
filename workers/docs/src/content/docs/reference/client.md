@@ -148,12 +148,7 @@ import type { DrawerConfig, CollectionTab } from "louisecms/client/drawer";
 ### Panels
 
 ```ts
-import {
-  PagesPanel,
-  MediaPanel,
-  SettingsPanel,
-  InquiriesPanel,
-} from "louisecms/client/drawer";
+import { PagesPanel, MediaPanel, SettingsPanel, InquiriesPanel } from "louisecms/client/drawer";
 ```
 
 - `PagesPanel` / `MediaPanel` / `SettingsPanel` — the fixed framework panels the
@@ -173,7 +168,11 @@ import {
   MediaUrlPicker,
   SettingsField,
 } from "louisecms/client/drawer";
-import type { SettingsFieldGroup, SettingsFieldDef, SettingsFieldType } from "louisecms/client/drawer";
+import type {
+  SettingsFieldGroup,
+  SettingsFieldDef,
+  SettingsFieldType,
+} from "louisecms/client/drawer";
 ```
 
 The primitives the framework panels are built from — reuse them so your own tabs

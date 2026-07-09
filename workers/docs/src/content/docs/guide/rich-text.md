@@ -21,7 +21,7 @@ Two rendering rules follow from this:
   block element, and a `<div>` inside a `<p>` is invalid HTML.
 - ProseKit's `htmlFromNode` wraps every payload in a `<div>`. Your sanitizer's
   allowlist **must include that wrapper** — a parser-based sanitizer drops
-  disallowed elements *with their children*, so omitting `div` silently wipes
+  disallowed elements _with their children_, so omitting `div` silently wipes
   every save.
 
 ## Sanitize on the write path

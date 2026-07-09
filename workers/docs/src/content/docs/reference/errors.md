@@ -41,16 +41,16 @@ try {
 
 ## Subclasses
 
-| Class | `code` | Thrown by |
-| --- | --- | --- |
-| `LouiseAuthError` | `AUTH_ERROR` | auth primitives |
-| `LouiseDbError` | `DB_ERROR` | db primitives |
-| `LouiseStorageError` | `STORAGE_ERROR` | storage primitives |
-| `LouiseCacheError` | `CACHE_ERROR` | cache primitives |
-| `LouiseEmailError` | `EMAIL_ERROR` | [`/email`](/reference/email/) |
-| `LouiseSessionError` | `SESSION_ERROR` | session primitives |
-| `LouiseQueueError` | `QUEUE_ERROR` | [`/queues`](/reference/queues/) |
-| `LouiseCmsError` | `CMS_ERROR` | [`/cms`](/reference/cms/) |
+| Class                | `code`          | Thrown by                       |
+| -------------------- | --------------- | ------------------------------- |
+| `LouiseAuthError`    | `AUTH_ERROR`    | auth primitives                 |
+| `LouiseDbError`      | `DB_ERROR`      | db primitives                   |
+| `LouiseStorageError` | `STORAGE_ERROR` | storage primitives              |
+| `LouiseCacheError`   | `CACHE_ERROR`   | cache primitives                |
+| `LouiseEmailError`   | `EMAIL_ERROR`   | [`/email`](/reference/email/)   |
+| `LouiseSessionError` | `SESSION_ERROR` | session primitives              |
+| `LouiseQueueError`   | `QUEUE_ERROR`   | [`/queues`](/reference/queues/) |
+| `LouiseCmsError`     | `CMS_ERROR`     | [`/cms`](/reference/cms/)       |
 
 Two CMS subclasses carry extra structure so a routing layer can map them by
 `instanceof` instead of matching message text:

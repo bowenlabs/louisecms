@@ -15,24 +15,21 @@ A tiny wrapper over the modern **Cloudflare Email Sending** binding
 :::note[Email Sending, not Email Routing]
 This uses the object-form Email Sending API, **not** the legacy
 `cloudflare:email` / mimetext path (which routes through Email Routing and can
-only deliver to *verified* destinations). Email Sending delivers to any recipient
+only deliver to _verified_ destinations). Email Sending delivers to any recipient
 once the `from` domain is onboarded — `wrangler email sending enable <domain>`.
 :::
 
 ## `sendEmail(binding, input)`
 
 ```ts
-function sendEmail(
-  binding: EmailSender,
-  input: SendEmailInput,
-): Promise<{ messageId: string }>;
+function sendEmail(binding: EmailSender, input: SendEmailInput): Promise<{ messageId: string }>;
 
 interface SendEmailInput {
   from: string | { email: string; name?: string };
   to: string | string[];
   subject: string;
   html: string;
-  text?: string;    // derived from `html` when omitted (spam-score hygiene)
+  text?: string; // derived from `html` when omitted (spam-score hygiene)
   replyTo?: string;
 }
 ```

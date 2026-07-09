@@ -27,7 +27,7 @@ On Workers, bindings and secrets only exist at request time. So Louise takes
 them as arguments:
 
 ```ts
-db(env.DB);                 // not: db() that reaches for a global
+db(env.DB); // not: db() that reaches for a global
 enqueue(env.MY_QUEUE, msg); // not: enqueue(msg)
 sendEmail(env.EMAIL, input);
 ```
@@ -38,7 +38,7 @@ This keeps every primitive:
   functions.
 - **Testable** — pass a fake `Queue`/`EmailSender`/D1 and assert, no runtime
   mocking. (See the package's own `test/` suite.)
-- **Schema-neutral** — `db()` hands you a Drizzle instance over *your* schema.
+- **Schema-neutral** — `db()` hands you a Drizzle instance over _your_ schema.
   Louise ships exactly one opinionated table, `site_settings`, and it's opt-in.
 
 ## 3. Rich text is HTML, not JSON
@@ -59,9 +59,9 @@ Editing is gated by **edit mode**, which a host app resolves per request
 (typically a sticky cookie toggled by a query param) and exposes to templates.
 Two facts matter:
 
-- The page's edit mode controls whether *edit affordances render*.
+- The page's edit mode controls whether _edit affordances render_.
 - A separate, session-derived signal (e.g. `locals.editor`) controls whether
-  *writes are trusted*. Never authorize a save on the page's edit mode alone.
+  _writes are trusted_. Never authorize a save on the page's edit mode alone.
 
 Louise gives you the client and the field contract; **you own the auth**. The
 [Auth & edit mode](/guide/auth-and-edit-mode/) guide walks the reference

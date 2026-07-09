@@ -133,9 +133,7 @@
       "indexes": {
         "media_key_unique": {
           "name": "media_key_unique",
-          "columns": [
-            "key"
-          ],
+          "columns": ["key"],
           "isUnique": true
         }
       },
@@ -245,9 +243,7 @@
       "indexes": {
         "pages_slug_unique": {
           "name": "pages_slug_unique",
-          "columns": [
-            "slug"
-          ],
+          "columns": ["slug"],
           "isUnique": true
         }
       },

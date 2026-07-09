@@ -27,15 +27,9 @@ await enqueue(env.COMMERCE_QUEUE, { type: "order.created", id });
 ## `processBatch(batch, handler)`
 
 ```ts
-function processBatch<T>(
-  batch: MessageBatch<T>,
-  handler: QueueMessageHandler<T>,
-): Promise<void>;
+function processBatch<T>(batch: MessageBatch<T>, handler: QueueMessageHandler<T>): Promise<void>;
 
-type QueueMessageHandler<T> = (
-  message: T,
-  context: { attempts: number },
-) => void | Promise<void>;
+type QueueMessageHandler<T> = (message: T, context: { attempts: number }) => void | Promise<void>;
 ```
 
 Drains a batch, running `handler` once per message. Each message is **acked or

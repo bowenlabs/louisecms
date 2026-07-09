@@ -47,17 +47,17 @@ passed straight to `database` (no adapter).
 
 ### `LouiseAuthConfig`
 
-| field | purpose |
-| --- | --- |
-| `rpName` | passkey relying-party display name |
-| `mailFrom` | `from` for the magic-link email |
-| `renderMagicLinkEmail` | render the email body (site branding) |
-| `resolveAdmins?` | admin allowlist; defaults to `OWNER_EMAIL` + `ENGINEER_EMAIL` from env. A platform passes a per-tenant `tenant_admins` lookup |
-| `customers?` | enable customer email/password (omit for an admin-only studio) |
-| `additionalFields?` | extra Better Auth user columns (e.g. `squareCustomerId`) |
-| `session?` | lifetime overrides (default 45-day rolling, daily refresh) |
-| `sessionCacheKv?` | cache sessions in KV (`secondaryStorage` + `storeSessionInDatabase`); omit for D1-only |
-| `extraPlugins?` | additional Better Auth plugins |
+| field                  | purpose                                                                                                                       |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `rpName`               | passkey relying-party display name                                                                                            |
+| `mailFrom`             | `from` for the magic-link email                                                                                               |
+| `renderMagicLinkEmail` | render the email body (site branding)                                                                                         |
+| `resolveAdmins?`       | admin allowlist; defaults to `OWNER_EMAIL` + `ENGINEER_EMAIL` from env. A platform passes a per-tenant `tenant_admins` lookup |
+| `customers?`           | enable customer email/password (omit for an admin-only studio)                                                                |
+| `additionalFields?`    | extra Better Auth user columns (e.g. `squareCustomerId`)                                                                      |
+| `session?`             | lifetime overrides (default 45-day rolling, daily refresh)                                                                    |
+| `sessionCacheKv?`      | cache sessions in KV (`secondaryStorage` + `storeSessionInDatabase`); omit for D1-only                                        |
+| `extraPlugins?`        | additional Better Auth plugins                                                                                                |
 
 ```ts
 // src/lib/auth.ts

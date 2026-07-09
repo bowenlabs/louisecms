@@ -7,17 +7,17 @@ sidebar:
 
 Louise's editor chrome — the drawer, inline-edit affordances, panels — is styled
 by the **louise** [daisyUI](https://daisyui.com) theme, built from the BowenLabs
-brand system with blue `#1481ef` as primary. It styles *editor surfaces only*;
+brand system with blue `#1481ef` as primary. It styles _editor surfaces only_;
 your public site keeps its own theme.
 
 ## Two themes
 
 Two daisyUI 5 themes (Tailwind v4 `@plugin` syntax):
 
-| Theme         | Scheme                    | Notes                                     |
-| ------------- | ------------------------- | ----------------------------------------- |
-| `louise`      | light (default)           | Dark green `#4f6933` as secondary         |
-| `louise-dark` | dark (`prefersdark`)      | Light green `#8ebe59` secondary           |
+| Theme         | Scheme               | Notes                             |
+| ------------- | -------------------- | --------------------------------- |
+| `louise`      | light (default)      | Dark green `#4f6933` as secondary |
+| `louise-dark` | dark (`prefersdark`) | Light green `#8ebe59` secondary   |
 
 Shared semantics: primary/info blue `#1481ef`, accent/warning yellow `#f3ae29`,
 success light-green `#8ebe59`, error orange `#db6327` (the palette has no red).
@@ -30,7 +30,9 @@ chrome:
 ```css
 @import "tailwindcss";
 @plugin "daisyui" {
-  themes: louise --default, louise-dark --prefersdark;
+  themes:
+    louise --default,
+    louise-dark --prefersdark;
 }
 @import "louisecms/theme/louise.css";
 @import "louisecms/theme/fonts.css";

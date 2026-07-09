@@ -14,7 +14,7 @@ does the validation Louise can't do from the client.
 A media endpoint should be **admin-gated** and enforce, at minimum:
 
 - **A size cap** (e.g. 10 MB).
-- **Content sniffing over trust.** Validate the *actual* image bytes with a
+- **Content sniffing over trust.** Validate the _actual_ image bytes with a
   magic-number check rather than trusting the client's `Content-Type`. Store and
   serve the verified type — not the claimed one.
 - **No SVG.** The bucket is a public domain; hosting arbitrary SVG/HTML is a
@@ -28,8 +28,7 @@ an `<img>`:
 export async function POST({ request, locals, env }) {
   if (!locals.editor) return new Response("Forbidden", { status: 403 });
   const file = await request.arrayBuffer();
-  if (file.byteLength > 10 * 1024 * 1024)
-    return new Response("Too large", { status: 413 });
+  if (file.byteLength > 10 * 1024 * 1024) return new Response("Too large", { status: 413 });
 
   const type = sniffImageType(file); // magic-number sniff — reject if not a known raster type
   if (!type) return new Response("Unsupported media", { status: 415 });
@@ -42,8 +41,8 @@ export async function POST({ request, locals, env }) {
 
 ## Why Louise doesn't ship this route
 
-The upload endpoint depends on *your* bucket binding, *your* key scheme, and
-*your* auth — all app-specific. Louise deliberately leaves it to you and instead
+The upload endpoint depends on _your_ bucket binding, _your_ key scheme, and
+_your_ auth — all app-specific. Louise deliberately leaves it to you and instead
 guarantees the editor side: uploads go through one endpoint, and the
 [sanitizer](/guide/rich-text/) only lets `<img>` (with `width`/`height`)
 into stored HTML.

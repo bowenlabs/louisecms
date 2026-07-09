@@ -150,7 +150,11 @@ const editorRoutes: WorkerRoute<WorkerEnv>[] = [
   saveRoute({
     resolveEditor,
     collections: {
-      pages: { table: pages, fields: ["title", "body", "seoTitle", "seoDescription"], richFields: ["body"] },
+      pages: {
+        table: pages,
+        fields: ["title", "body", "seoTitle", "seoDescription"],
+        richFields: ["body"],
+      },
     },
   }),
   settingsRoute({ table: siteSettings, resolveEditor, columns: SETTINGS_COLUMNS }),

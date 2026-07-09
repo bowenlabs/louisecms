@@ -6,7 +6,7 @@ sidebar:
 ---
 
 Inline editing is the heart of Louise: in edit mode, each editable region on the
-page becomes editable *in place*, and only the fields that actually change are
+page becomes editable _in place_, and only the fields that actually change are
 saved.
 
 ## Field markers
@@ -16,10 +16,7 @@ An editable region carries a `data-louise-field` marker whose value is
 
 ```html
 <h1 data-louise-field="settings:1:heroHeadline">…</h1>
-<div
-  data-louise-field="settings:1:heroIntro"
-  data-louise-type="richtext"
->…</div>
+<div data-louise-field="settings:1:heroIntro" data-louise-type="richtext">…</div>
 ```
 
 - **Plain text** (no `data-louise-type`) becomes a single-line
@@ -60,7 +57,7 @@ endpoint (e.g. `POST /api/louise/save`). Unchanged fields are never sent.
 
 Your endpoint owns two responsibilities Louise cannot do for you:
 
-1. **Authorize the write** from the session — *not* from the page's edit mode.
+1. **Authorize the write** from the session — _not_ from the page's edit mode.
 2. **Allowlist every writable field.** A forged request must not reach a column
    you didn't list.
 

@@ -45,9 +45,24 @@ const resolveEditor = async (request: Request, env: Env) =>
 export default composeWorker({
   routes: [
     pagesRoute({ table: pages, resolveEditor }),
-    mediaRoute({ table: media, resolveEditor, referenceSources: [/* … */] }),
-    settingsRoute({ table: siteSettings, resolveEditor, columns: ["siteName", "navLinks", /* … */] }),
-    saveRoute({ resolveEditor, collections: { /* … */ } }),
+    mediaRoute({
+      table: media,
+      resolveEditor,
+      referenceSources: [
+        /* … */
+      ],
+    }),
+    settingsRoute({
+      table: siteSettings,
+      resolveEditor,
+      columns: ["siteName", "navLinks" /* … */],
+    }),
+    saveRoute({
+      resolveEditor,
+      collections: {
+        /* … */
+      },
+    }),
     inquiriesRoute({ table: inquiries, resolveEditor }),
   ],
   // …your bespoke routes + SSR fallthrough.
@@ -98,16 +113,16 @@ export const ALL: APIRoute = (ctx) =>
 
 ## Routes
 
-| Factory | Endpoint | Methods |
-| --- | --- | --- |
-| `pagesRoute` | `/api/louise/pages` (+ `/:id`) | GET list · POST create · GET/PATCH/DELETE one |
-| `mediaRoute` | `/api/louise/media` | GET list · POST upload · DELETE (reference-scanned) |
-| `listMediaRoute` | `/api/louise/media` | registry-less variant: lists R2 directly, per-request `scope` |
-| `settingsRoute` | `/api/louise/settings` | GET · POST/PATCH (structured base + `custom`) |
-| `blobSettingsRoute` | `/api/louise/settings` | GET · POST/PATCH — single-JSON-blob variant |
-| `saveRoute` | `/api/louise/save` | POST (inline field save) |
-| `inquiriesRoute` | `/api/louise/inquiries` | GET list · DELETE one |
-| `seedRoute` | `/api/louise/seed` | seeds the `site_settings` singleton (idempotent) |
+| Factory             | Endpoint                       | Methods                                                       |
+| ------------------- | ------------------------------ | ------------------------------------------------------------- |
+| `pagesRoute`        | `/api/louise/pages` (+ `/:id`) | GET list · POST create · GET/PATCH/DELETE one                 |
+| `mediaRoute`        | `/api/louise/media`            | GET list · POST upload · DELETE (reference-scanned)           |
+| `listMediaRoute`    | `/api/louise/media`            | registry-less variant: lists R2 directly, per-request `scope` |
+| `settingsRoute`     | `/api/louise/settings`         | GET · POST/PATCH (structured base + `custom`)                 |
+| `blobSettingsRoute` | `/api/louise/settings`         | GET · POST/PATCH — single-JSON-blob variant                   |
+| `saveRoute`         | `/api/louise/save`             | POST (inline field save)                                      |
+| `inquiriesRoute`    | `/api/louise/inquiries`        | GET list · DELETE one                                         |
+| `seedRoute`         | `/api/louise/seed`             | seeds the `site_settings` singleton (idempotent)              |
 
 - **`pagesRoute`** — CMS pages CRUD. Create/update are allowlisted to
   `fields` (defaults `DEFAULT_PAGE_FIELDS`) and rich fields (`body`) are run

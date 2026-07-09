@@ -42,21 +42,33 @@ const safe = sanitizeRichHtml(untrustedEditorHtml); // <script>, on*, javascript
 
 ```ts
 function rateLimit(
-  kv: KVLike, key: string, limit: number, windowSec: number,
+  kv: KVLike,
+  key: string,
+  limit: number,
+  windowSec: number,
 ): Promise<{ ok: boolean; remaining: number; retryAfter: number }>;
 ```
 
 A lightweight KV-backed **fixed-window** limiter for public POST surfaces. It
 **fails open** — any KV error returns `ok: true`, so a limiter outage never takes
-down sign-in. `windowSec` must be ≥ 60 (KV's minimum TTL). The *rules* are your
+down sign-in. `windowSec` must be ≥ 60 (KV's minimum TTL). The _rules_ are your
 policy: define a `RateRule[]` and pass it to `matchRateRule`.
 
 ```ts
 const rule = matchRateRule(RATE_RULES, request.method, url.pathname);
 if (rule) {
   const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
-  const { ok, retryAfter } = await rateLimit(env.KV, `${rule.name}:${ip}`, rule.limit, rule.windowSec);
-  if (!ok) return new Response("Too many requests", { status: 429, headers: { "retry-after": String(retryAfter) } });
+  const { ok, retryAfter } = await rateLimit(
+    env.KV,
+    `${rule.name}:${ip}`,
+    rule.limit,
+    rule.windowSec,
+  );
+  if (!ok)
+    return new Response("Too many requests", {
+      status: 429,
+      headers: { "retry-after": String(retryAfter) },
+    });
 }
 ```
 

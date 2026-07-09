@@ -62,7 +62,7 @@ Related builders: `collectionToTable`, `collectionVersionsTable`,
 import { createLocalApi, createVersionedLocalApi } from "louisecms/cms";
 
 const api = createLocalApi(collectionConfig, table, { registry });
-await api.create(doc, context);      // runs access + validation, then inserts
+await api.create(doc, context); // runs access + validation, then inserts
 await api.find(query, context);
 await api.update(id, patch, context);
 ```

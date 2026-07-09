@@ -17,7 +17,7 @@ query param):
 - `?louise` → enter edit mode (admins only) and set the cookie
 - `?louise=off` → clear it
 
-When an admin is in edit mode, middleware exposes two *separate* facts to the
+When an admin is in edit mode, middleware exposes two _separate_ facts to the
 request:
 
 - **`locals.editMode`** — the page renders edit affordances (markers, the bar).
@@ -46,6 +46,6 @@ magic-link** delivered through Cloudflare Email Sending (Louise's
   request time on Workers.
 - **Rate-limited & captcha'd** public POSTs (sign-in, contact, checkout).
 
-None of this is *in* the `louisecms` package — it's the host app's
+None of this is _in_ the `louisecms` package — it's the host app's
 wiring. Louise's contribution is the `email` primitive the magic link rides on
 and the client that only renders once your middleware says "editor".

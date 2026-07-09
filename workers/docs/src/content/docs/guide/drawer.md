@@ -60,14 +60,14 @@ can't collapse it:
 - **Bottom tabs — your collections.** Everything whose shape and display vary per
   site: your bespoke record types, registered as `CollectionTab`s via `tabs`.
 
-**Inquiries** is a Louise base table, but *how* a submission is shown varies too
+**Inquiries** is a Louise base table, but _how_ a submission is shown varies too
 much to fix in the shell — so it ships as a registerable tab (the default
 `InquiriesPanel`, customizable via `renderRow`), not a fixed framework panel. Add
 it to `tabs` like any other collection.
 
 ## Extending Settings
 
-The Settings panel is framework-owned, but its *contents* are the common base
+The Settings panel is framework-owned, but its _contents_ are the common base
 (mapped 1:1 to [`siteSettingsColumns`](/reference/db/) — identity,
 appearance, navigation, contact, SEO) **plus your additions**. Declare extra
 fields with `settingsExtension`; they render in the same panel and persist to the
@@ -106,7 +106,9 @@ fields render:
 mountDrawer({
   userName,
   settingsBaseGroups: [], // hide the framework base fields this site doesn't use
-  settingsExtension: [/* the site's own settings groups */],
+  settingsExtension: [
+    /* the site's own settings groups */
+  ],
 });
 ```
 

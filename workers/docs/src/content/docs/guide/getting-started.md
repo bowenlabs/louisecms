@@ -18,11 +18,11 @@ Louise's heavier dependencies are **optional peers**, so a route that only uses
 `louisecms/errors` pulls in nothing extra. Install the peers for the
 exports you actually use:
 
-| If you import…                            | Also install                     |
-| ----------------------------------------- | -------------------------------- |
-| `louisecms/db`, `/cms`            | `drizzle-orm`                    |
-| `louisecms/client`                | `solid-js prosekit @prosekit/pm` |
-| `/email`, `/queues`, `/errors`, `/commerce` | *(no peers)*                   |
+| If you import…                              | Also install                     |
+| ------------------------------------------- | -------------------------------- |
+| `louisecms/db`, `/cms`                      | `drizzle-orm`                    |
+| `louisecms/client`                          | `solid-js prosekit @prosekit/pm` |
+| `/email`, `/queues`, `/errors`, `/commerce` | _(no peers)_                     |
 
 ```sh
 npm install drizzle-orm            # for /db and /cms

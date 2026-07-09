@@ -16,8 +16,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "Louise CMS",
-      description:
-        "A V8-native, inline edit-on-the-live-page CMS for Cloudflare Workers.",
+      description: "A V8-native, inline edit-on-the-live-page CMS for Cloudflare Workers.",
       logo: { src: "./src/assets/louise-mark.svg", replacesTitle: false },
       social: [
         {
@@ -27,8 +26,7 @@ export default defineConfig({
         },
       ],
       editLink: {
-        baseUrl:
-          "https://github.com/bowenlabs/louisecms/edit/main/workers/docs/",
+        baseUrl: "https://github.com/bowenlabs/louisecms/edit/main/workers/docs/",
       },
       sidebar: [
         { label: "Guide", items: [{ autogenerate: { directory: "guide" } }] },
