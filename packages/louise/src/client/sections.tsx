@@ -21,9 +21,9 @@
 // keystroke is a fine-grained path write (`set("items", i, key, value)`) that
 // updates only that leaf — no row teardown, no focus loss.
 
-import { createSignal, For, onMount, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { createStore, unwrap } from "solid-js/store";
-import { render } from "solid-js/web";
+import { Portal, render } from "solid-js/web";
 import { Icon } from "./icons.jsx";
 import { injectStyles } from "./styles.js";
 
@@ -54,6 +54,63 @@ export interface SectionsEditorProps {
 
 function humanize(key: string): string {
   return key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
+}
+
+/** Resolve when an element matching `selector` exists — checking now, then via a
+ *  MutationObserver — or `null` after `timeoutMs`. The shared edit bar
+ *  (`.louise-bar`) and this sections dock mount independently and in either
+ *  order, so the dock can't assume the bar is already in the DOM. */
+function whenElement(selector: string, timeoutMs = 3000): Promise<HTMLElement | null> {
+  const now = document.querySelector<HTMLElement>(selector);
+  if (now) return Promise.resolve(now);
+  return new Promise((resolve) => {
+    const obs = new MutationObserver(() => {
+      const el = document.querySelector<HTMLElement>(selector);
+      if (el) {
+        obs.disconnect();
+        clearTimeout(timer);
+        resolve(el);
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+    const timer = setTimeout(() => {
+      obs.disconnect();
+      resolve(null);
+    }, timeoutMs);
+  });
+}
+
+/** A dragged dock position (viewport px). `null` = the default CSS corner. */
+interface DockPos {
+  left: number;
+  top: number;
+}
+const DOCK_POS_KEY = "louise:sections-dock-pos";
+const DOCK_MARGIN = 8;
+
+/** The last dragged dock position, persisted across the reloads structural edits
+ *  trigger so the dock stays where the editor put it. */
+function loadDockPos(): DockPos | null {
+  try {
+    const p = JSON.parse(localStorage.getItem(DOCK_POS_KEY) ?? "null");
+    if (p && typeof p.left === "number" && typeof p.top === "number") return p;
+  } catch {
+    /* ignore malformed/blocked storage */
+  }
+  return null;
+}
+
+/** Keep a position on-screen given the dock's current size (viewport may have
+ *  changed since it was saved). Returns `null` unchanged. */
+function clampDockPos(pos: DockPos | null): DockPos | null {
+  if (!pos) return null;
+  const el = document.querySelector<HTMLElement>(".louise-sections-dock");
+  const w = el?.offsetWidth ?? 300;
+  const h = el?.offsetHeight ?? 200;
+  return {
+    left: Math.max(DOCK_MARGIN, Math.min(pos.left, window.innerWidth - w - DOCK_MARGIN)),
+    top: Math.max(DOCK_MARGIN, Math.min(pos.top, window.innerHeight - h - DOCK_MARGIN)),
+  };
 }
 
 /** A blank value for a field: `[]` for arrays, `""` for text. */
@@ -221,6 +278,18 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
   const [showHistory, setShowHistory] = createSignal(false);
   const hasDraft = () => versions().some((v) => v.status === "draft");
 
+  // A leading slot injected into the shared edit bar (`.louise-bar`) that hosts
+  // the Save-draft / Publish actions, so the page shows ONE action bar rather
+  // than a second set of buttons in this dock. Null until the bar is found (it
+  // mounts separately); the actions fall back into the dock while so.
+  const [barSlot, setBarSlot] = createSignal<HTMLElement | null>(null);
+
+  // Drag-to-move: `pos` is the dock's viewport position once dragged (null = the
+  // default CSS corner), `dragging` styles the grab cursor. The editor drags the
+  // dock by its header to move it off whatever it's covering.
+  const [pos, setPos] = createSignal<DockPos | null>(null);
+  const [dragging, setDragging] = createSignal(false);
+
   const touched = () => {
     setDirty(true);
     if (status() !== "idle") setStatus("idle");
@@ -244,6 +313,65 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
   onMount(() => {
     wireInline(props.host, props.catalog, state.items, set, touched);
     void loadVersions();
+    // Relocate Save-draft / Publish onto the shared edit bar once it exists.
+    void whenElement(".louise-bar").then((bar) => {
+      if (!bar) return;
+      const slot = document.createElement("span");
+      slot.className = "louise-bar-actions";
+      bar.insertBefore(slot, bar.firstChild);
+      setBarSlot(slot);
+    });
+    setPos(clampDockPos(loadDockPos()));
+  });
+
+  // Drag the dock by its header. Pointer move/up are on `window` so the drag
+  // survives the pointer leaving the header; persisted on release.
+  let dragFrom: { x: number; y: number; left: number; top: number } | null = null;
+  const onDragMove = (e: PointerEvent) => {
+    if (!dragFrom) return;
+    const el = document.querySelector<HTMLElement>(".louise-sections-dock");
+    const w = el?.offsetWidth ?? 300;
+    const h = el?.offsetHeight ?? 200;
+    setPos({
+      left: Math.max(
+        DOCK_MARGIN,
+        Math.min(dragFrom.left + (e.clientX - dragFrom.x), window.innerWidth - w - DOCK_MARGIN),
+      ),
+      top: Math.max(
+        DOCK_MARGIN,
+        Math.min(dragFrom.top + (e.clientY - dragFrom.y), window.innerHeight - h - DOCK_MARGIN),
+      ),
+    });
+  };
+  const endDrag = () => {
+    if (!dragFrom) return;
+    dragFrom = null;
+    setDragging(false);
+    window.removeEventListener("pointermove", onDragMove);
+    window.removeEventListener("pointerup", endDrag);
+    const p = pos();
+    if (p) {
+      try {
+        localStorage.setItem(DOCK_POS_KEY, JSON.stringify(p));
+      } catch {
+        /* ignore blocked storage */
+      }
+    }
+  };
+  const startDrag = (e: PointerEvent) => {
+    // The collapse toggle inside the header is a click target, not a drag grip.
+    if ((e.target as HTMLElement).closest(".louise-sections-toggle")) return;
+    const el = document.querySelector<HTMLElement>(".louise-sections-dock");
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    dragFrom = { x: e.clientX, y: e.clientY, left: rect.left, top: rect.top };
+    setDragging(true);
+    window.addEventListener("pointermove", onDragMove);
+    window.addEventListener("pointerup", endDrag);
+  };
+  onCleanup(() => {
+    window.removeEventListener("pointermove", onDragMove);
+    window.removeEventListener("pointerup", endDrag);
   });
 
   // Parse a `{ error, violations }` body into a display detail (validation reason).
@@ -408,13 +536,43 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
   const arrayFields = (item: SectionItem): [string, SectionField][] =>
     Object.entries(props.catalog[item._type]?.fields ?? {}).filter(([, f]) => f.type === "array");
 
+  // The page's primary save actions — Save draft (green) and Publish (yellow) —
+  // rendered onto the shared edit bar (or the dock as fallback). A component so
+  // the same markup mounts in either place.
+  const SaveActions = () => (
+    <>
+      <button
+        class="louise-savedraft"
+        type="button"
+        disabled={status() === "saving" || status() === "publishing" || !dirty()}
+        onClick={() => void save()}
+      >
+        {status() === "saving" ? "Saving…" : "Save draft"}
+      </button>
+      <button
+        class="louise-publish"
+        type="button"
+        disabled={status() === "publishing" || (!dirty() && !hasDraft())}
+        onClick={() => void publish()}
+      >
+        {status() === "publishing" ? "Publishing…" : "Publish"}
+      </button>
+    </>
+  );
+
   return (
     <div
       class="louise-sections-dock"
       data-theme="louise"
       data-collapsed={collapsed() ? "1" : undefined}
+      data-dragging={dragging() ? "1" : undefined}
+      style={
+        pos()
+          ? { left: `${pos()?.left}px`, top: `${pos()?.top}px`, right: "auto", bottom: "auto" }
+          : undefined
+      }
     >
-      <div class="louise-sections-head">
+      <div class="louise-sections-head" onPointerDown={startDrag}>
         <button
           class="louise-sections-toggle"
           type="button"
@@ -552,6 +710,33 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
             )}
           </For>
 
+          {/* Add section — full-width, above the version history. */}
+          <div class="louise-sections-add">
+            <button
+              class="louise-btn louise-btn-block"
+              type="button"
+              onClick={() => setAdding((v) => !v)}
+            >
+              <Icon name="plus" /> Add section
+            </button>
+            <Show when={adding()}>
+              <div class="louise-sections-palette" role="menu">
+                <For each={Object.entries(props.catalog)}>
+                  {([type, def]) => (
+                    <button
+                      class="louise-slash-item"
+                      type="button"
+                      role="menuitem"
+                      onClick={() => addSection(type)}
+                    >
+                      {def.label}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </div>
+
           {/* Version history — publish (restore) any version to make it live. */}
           <div class="louise-sections-history">
             <button
@@ -618,46 +803,20 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
             </Show>
           </div>
 
-          <div class="louise-form-actions">
-            <button
-              class="louise-btn louise-btn-primary"
-              type="button"
-              disabled={status() === "saving" || status() === "publishing" || !dirty()}
-              onClick={() => void save()}
-            >
-              {status() === "saving" ? "Saving…" : "Save draft"}
-            </button>
-            <button
-              class="louise-btn"
-              type="button"
-              disabled={status() === "publishing" || (!dirty() && !hasDraft())}
-              onClick={() => void publish()}
-            >
-              {status() === "publishing" ? "Publishing…" : "Publish"}
-            </button>
-            <div class="louise-sections-add">
-              <button class="louise-btn" type="button" onClick={() => setAdding((v) => !v)}>
-                <Icon name="plus" /> Add section
-              </button>
-              <Show when={adding()}>
-                <div class="louise-sections-palette" role="menu">
-                  <For each={Object.entries(props.catalog)}>
-                    {([type, def]) => (
-                      <button
-                        class="louise-slash-item"
-                        type="button"
-                        role="menuitem"
-                        onClick={() => addSection(type)}
-                      >
-                        {def.label}
-                      </button>
-                    )}
-                  </For>
-                </div>
-              </Show>
+          {/* Fallback home for Save draft + Publish when no edit bar exists. */}
+          <Show when={!barSlot()}>
+            <div class="louise-sections-footer">
+              <SaveActions />
             </div>
-          </div>
+          </Show>
         </div>
+      </Show>
+      {/* Save draft + Publish, relocated onto the shared edit bar. Kept outside
+          the collapse toggle so they stay on the bar when the dock is collapsed. */}
+      <Show when={barSlot()}>
+        <Portal mount={barSlot()!}>
+          <SaveActions />
+        </Portal>
       </Show>
     </div>
   );
