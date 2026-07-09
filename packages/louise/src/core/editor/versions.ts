@@ -79,10 +79,17 @@ export function versionsRoute<Env extends EditorRouteEnv = EditorRouteEnv>(
     const database = db(env.DB);
     const api = createVersionedLocalApi(database, cfg.table, cfg.versionsTable, cfg.config);
 
-    // GET /:id/versions — history, newest first.
+    // GET /:id/versions — history, newest first, plus the live pointer so the
+    // editor can flag which version is currently published. Publishing never
+    // demotes a prior version's `status`, so several rows can read "published"
+    // over time; `published_version_id` on the live row is the only authoritative
+    // "this one is live" signal.
     if (action === "versions" && method === "GET") {
       const versions = await api.findVersions(context, id);
-      return json({ versions });
+      const [row] = await database.select().from(cfg.table).where(eq(pkCol, id)).limit(1);
+      const publishedVersionId =
+        ((row as Record<string, unknown> | undefined)?.publishedVersionId as number | null) ?? null;
+      return json({ versions, publishedVersionId });
     }
 
     // POST /:id/versions — save a draft. Merge the edit over the current live

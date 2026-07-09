@@ -212,6 +212,10 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
   const [errorDetail, setErrorDetail] = createSignal("");
 
   const [versions, setVersions] = createSignal<VersionRow[]>([]);
+  // The id of the version that is currently LIVE (page's `published_version_id`),
+  // or null if the page is unpublished. Used to flag the live row in history —
+  // status alone can't, since multiple versions read "published" over time.
+  const [liveVersionId, setLiveVersionId] = createSignal<number | null>(null);
   const [showHistory, setShowHistory] = createSignal(false);
   const hasDraft = () => versions().some((v) => v.status === "draft");
 
@@ -223,10 +227,15 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
   const loadVersions = async () => {
     try {
       const res = await fetch(`/api/louise/pages/${props.pageId}/versions`);
-      const body = (await res.json().catch(() => null)) as { versions?: VersionRow[] } | null;
+      const body = (await res.json().catch(() => null)) as {
+        versions?: VersionRow[];
+        publishedVersionId?: number | null;
+      } | null;
       setVersions(body?.versions ?? []);
+      setLiveVersionId(body?.publishedVersionId ?? null);
     } catch {
       setVersions([]);
+      setLiveVersionId(null);
     }
   };
 
@@ -525,22 +534,25 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
             <Show when={showHistory()}>
               <div class="louise-sections-versions">
                 <For each={versions()} fallback={<p class="louise-muted">No versions yet.</p>}>
-                  {(v) => (
-                    <div class="louise-arr-row">
-                      <span>
-                        {v.status === "published" ? "Published" : "Draft"}
-                        {v.createdAt ? ` · ${new Date(v.createdAt).toLocaleString()}` : ""}
-                      </span>
-                      <button
-                        class="louise-btn louise-btn-xs"
-                        type="button"
-                        disabled={status() === "publishing"}
-                        onClick={() => void publish(v.id)}
-                      >
-                        {v.status === "published" ? "Restore" : "Publish"}
-                      </button>
-                    </div>
-                  )}
+                  {(v) => {
+                    const isLive = () => v.id === liveVersionId();
+                    return (
+                      <div class="louise-arr-row" data-live={isLive() ? "1" : undefined}>
+                        <span>
+                          {isLive() ? "Live" : v.status === "published" ? "Published" : "Draft"}
+                          {v.createdAt ? ` · ${new Date(v.createdAt).toLocaleString()}` : ""}
+                        </span>
+                        <button
+                          class="louise-btn louise-btn-xs"
+                          type="button"
+                          disabled={status() === "publishing" || isLive()}
+                          onClick={() => void publish(v.id)}
+                        >
+                          {isLive() ? "Current" : v.status === "published" ? "Restore" : "Publish"}
+                        </button>
+                      </div>
+                    );
+                  }}
                 </For>
               </div>
             </Show>
