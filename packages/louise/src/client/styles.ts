@@ -705,12 +705,20 @@ const CSS = `
   color: #0f172a;
 }
 .louise-sections-dock[data-collapsed="1"] { width: auto; }
+/* Header doubles as the drag handle — grab it to move the dock off whatever it
+   covers. touch-action:none so a touch drag moves it instead of scrolling; the
+   collapse toggle inside keeps its own pointer cursor + click. */
 .louise-sections-head {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
 }
+.louise-sections-dock[data-dragging="1"] { user-select: none; }
+.louise-sections-dock[data-dragging="1"] .louise-sections-head { cursor: grabbing; }
 .louise-sections-toggle {
   border: none;
   background: none;

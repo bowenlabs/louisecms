@@ -13,3 +13,6 @@ Unify the editor's save controls onto one bar, and tidy the sections dock.
 - **Dock cleanup.** **Add section** moves above the version history and spans the
   full dock width, matching the section rows. The Save/Publish actions stay on the
   bar even when the dock is collapsed.
+- **Movable dock.** Drag the dock by its header to move it off whatever it covers;
+  the position is clamped to the viewport and persisted (localStorage) so it
+  survives the reloads structural edits trigger.

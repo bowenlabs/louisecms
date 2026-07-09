@@ -21,7 +21,7 @@
 // keystroke is a fine-grained path write (`set("items", i, key, value)`) that
 // updates only that leaf — no row teardown, no focus loss.
 
-import { createSignal, For, onMount, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { createStore, unwrap } from "solid-js/store";
 import { Portal, render } from "solid-js/web";
 import { Icon } from "./icons.jsx";
@@ -78,6 +78,39 @@ function whenElement(selector: string, timeoutMs = 3000): Promise<HTMLElement | 
       resolve(null);
     }, timeoutMs);
   });
+}
+
+/** A dragged dock position (viewport px). `null` = the default CSS corner. */
+interface DockPos {
+  left: number;
+  top: number;
+}
+const DOCK_POS_KEY = "louise:sections-dock-pos";
+const DOCK_MARGIN = 8;
+
+/** The last dragged dock position, persisted across the reloads structural edits
+ *  trigger so the dock stays where the editor put it. */
+function loadDockPos(): DockPos | null {
+  try {
+    const p = JSON.parse(localStorage.getItem(DOCK_POS_KEY) ?? "null");
+    if (p && typeof p.left === "number" && typeof p.top === "number") return p;
+  } catch {
+    /* ignore malformed/blocked storage */
+  }
+  return null;
+}
+
+/** Keep a position on-screen given the dock's current size (viewport may have
+ *  changed since it was saved). Returns `null` unchanged. */
+function clampDockPos(pos: DockPos | null): DockPos | null {
+  if (!pos) return null;
+  const el = document.querySelector<HTMLElement>(".louise-sections-dock");
+  const w = el?.offsetWidth ?? 300;
+  const h = el?.offsetHeight ?? 200;
+  return {
+    left: Math.max(DOCK_MARGIN, Math.min(pos.left, window.innerWidth - w - DOCK_MARGIN)),
+    top: Math.max(DOCK_MARGIN, Math.min(pos.top, window.innerHeight - h - DOCK_MARGIN)),
+  };
 }
 
 /** A blank value for a field: `[]` for arrays, `""` for text. */
@@ -251,6 +284,12 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
   // mounts separately); the actions fall back into the dock while so.
   const [barSlot, setBarSlot] = createSignal<HTMLElement | null>(null);
 
+  // Drag-to-move: `pos` is the dock's viewport position once dragged (null = the
+  // default CSS corner), `dragging` styles the grab cursor. The editor drags the
+  // dock by its header to move it off whatever it's covering.
+  const [pos, setPos] = createSignal<DockPos | null>(null);
+  const [dragging, setDragging] = createSignal(false);
+
   const touched = () => {
     setDirty(true);
     if (status() !== "idle") setStatus("idle");
@@ -282,6 +321,57 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
       bar.insertBefore(slot, bar.firstChild);
       setBarSlot(slot);
     });
+    setPos(clampDockPos(loadDockPos()));
+  });
+
+  // Drag the dock by its header. Pointer move/up are on `window` so the drag
+  // survives the pointer leaving the header; persisted on release.
+  let dragFrom: { x: number; y: number; left: number; top: number } | null = null;
+  const onDragMove = (e: PointerEvent) => {
+    if (!dragFrom) return;
+    const el = document.querySelector<HTMLElement>(".louise-sections-dock");
+    const w = el?.offsetWidth ?? 300;
+    const h = el?.offsetHeight ?? 200;
+    setPos({
+      left: Math.max(
+        DOCK_MARGIN,
+        Math.min(dragFrom.left + (e.clientX - dragFrom.x), window.innerWidth - w - DOCK_MARGIN),
+      ),
+      top: Math.max(
+        DOCK_MARGIN,
+        Math.min(dragFrom.top + (e.clientY - dragFrom.y), window.innerHeight - h - DOCK_MARGIN),
+      ),
+    });
+  };
+  const endDrag = () => {
+    if (!dragFrom) return;
+    dragFrom = null;
+    setDragging(false);
+    window.removeEventListener("pointermove", onDragMove);
+    window.removeEventListener("pointerup", endDrag);
+    const p = pos();
+    if (p) {
+      try {
+        localStorage.setItem(DOCK_POS_KEY, JSON.stringify(p));
+      } catch {
+        /* ignore blocked storage */
+      }
+    }
+  };
+  const startDrag = (e: PointerEvent) => {
+    // The collapse toggle inside the header is a click target, not a drag grip.
+    if ((e.target as HTMLElement).closest(".louise-sections-toggle")) return;
+    const el = document.querySelector<HTMLElement>(".louise-sections-dock");
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    dragFrom = { x: e.clientX, y: e.clientY, left: rect.left, top: rect.top };
+    setDragging(true);
+    window.addEventListener("pointermove", onDragMove);
+    window.addEventListener("pointerup", endDrag);
+  };
+  onCleanup(() => {
+    window.removeEventListener("pointermove", onDragMove);
+    window.removeEventListener("pointerup", endDrag);
   });
 
   // Parse a `{ error, violations }` body into a display detail (validation reason).
@@ -475,8 +565,14 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
       class="louise-sections-dock"
       data-theme="louise"
       data-collapsed={collapsed() ? "1" : undefined}
+      data-dragging={dragging() ? "1" : undefined}
+      style={
+        pos()
+          ? { left: `${pos()?.left}px`, top: `${pos()?.top}px`, right: "auto", bottom: "auto" }
+          : undefined
+      }
     >
-      <div class="louise-sections-head">
+      <div class="louise-sections-head" onPointerDown={startDrag}>
         <button
           class="louise-sections-toggle"
           type="button"
