@@ -64,7 +64,9 @@ export function searchRoute<Env extends EditorRouteEnv = EditorRouteEnv>(
     if (isSearch && request.method === "GET") {
       const q = url.searchParams.get("q")?.trim() ?? "";
       if (!q) return json({ results: [] });
-      const limit = Number(url.searchParams.get("limit")) || 20;
+      // Clamp to a sane ceiling so a client can't request an unbounded result set.
+      const requested = Number(url.searchParams.get("limit"));
+      const limit = Number.isFinite(requested) && requested > 0 ? Math.min(requested, 100) : 20;
       try {
         const results = await api.search(context, toFtsQuery(q), { limit });
         return json({ results });

@@ -37,10 +37,11 @@ function safeName(name: string): string {
 
 /**
  * Verify and store an uploaded image in R2. The bytes are sniffed for a real
- * image signature (the client MIME is never trusted); the object is stored and
- * served with the *verified* content type and `X-Content-Type-Options: nosniff`
- * semantics via an immutable cache header. Rejects oversize files (413) and
- * non-images (415) without writing anything.
+ * image signature (the client MIME is never trusted); the object is stored with
+ * the *verified* content type and an immutable cache header. The serving route
+ * should set `X-Content-Type-Options: nosniff` on the response (this helper only
+ * writes the object). Rejects oversize files (413) and non-images (415) without
+ * writing anything.
  */
 export async function putMedia(
   bucket: R2Bucket,

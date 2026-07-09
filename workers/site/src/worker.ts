@@ -247,6 +247,10 @@ const mediaAssetRoute: WorkerRoute<WorkerEnv> = async (request, env) => {
   obj.writeHttpMetadata(headers);
   headers.set("etag", obj.httpEtag);
   headers.set("cache-control", "public, max-age=31536000, immutable");
+  // Serve with the stored (magic-byte-verified) content type and forbid MIME
+  // sniffing — this route bypasses the Astro middleware that sets nosniff
+  // elsewhere, so set it here as defense-in-depth against a polyglot upload.
+  headers.set("x-content-type-options", "nosniff");
   return new Response(obj.body, { headers });
 };
 

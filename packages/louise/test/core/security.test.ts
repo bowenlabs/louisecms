@@ -199,6 +199,15 @@ describe("getSessionSecret", () => {
   it("fails closed (re-throws) on a deployed host", async () => {
     await expect(getSessionSecret(boom, new URL("https://prod.com"))).rejects.toThrow();
   });
+
+  it("treats an empty stored secret as a failure (fails closed on a deployed host)", async () => {
+    const empty = { get: async () => "" };
+    await expect(getSessionSecret(empty, new URL("https://prod.com"))).rejects.toThrow();
+    // …but still usable in dev via the fallback.
+    expect(await getSessionSecret(empty, new URL("http://localhost:4321"))).toBe(
+      "louise-dev-secret",
+    );
+  });
 });
 
 describe("louiseSecurityHeaders", () => {
