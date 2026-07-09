@@ -17,3 +17,6 @@ Pre-publish security hardening (audit follow-ups).
   request an unbounded result set.
 - **Publish safety:** a `prepublishOnly` build hook ensures `dist/` is rebuilt
   before the package is published, so a stale build can't ship.
+- **Smaller tarball:** the published package no longer ships `.js.map`
+  sourcemaps (they roughly doubled its size and only re-shipped the already-public
+  source) — the tarball drops from ~386 kB to ~164 kB.
