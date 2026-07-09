@@ -40,9 +40,10 @@ import type {
 } from "../core/cms/sections.js";
 export type { SectionCatalog, SectionDef, SectionField, SectionFieldType, SectionItem };
 
-/** Whether a field is edited in place (default: text/textarea yes, array no). */
+/** Whether a field is edited in place — only plain text is (default). `array`
+ *  and `image` are edited in the dock, so they're non-inline. */
 function isInline(field: SectionField): boolean {
-  return field.inline ?? field.type !== "array";
+  return field.inline ?? (field.type === "text" || field.type === "textarea");
 }
 
 export interface SectionsEditorProps {
@@ -119,6 +120,68 @@ function wireInline(
       onEdit();
     });
   }
+}
+
+/**
+ * Dock control for an `image` section field (e.g. a hero logo): a preview plus
+ * upload / clear. Uploads POST to the site's media route (`/api/louise/media`)
+ * and set the field to the returned URL. `onSet` routes through the persist +
+ * reload path, so the new image shows on the bespoke render immediately.
+ */
+function ImageDockField(props: { label: string; value: string; onSet: (url: string) => void }) {
+  const [uploading, setUploading] = createSignal(false);
+  const [error, setError] = createSignal("");
+
+  const onUpload = async (e: Event & { currentTarget: HTMLInputElement }) => {
+    const input = e.currentTarget;
+    const file = (input.files ?? [])[0];
+    if (!file) return;
+    setError("");
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("scope", "web");
+      const res = await fetch("/api/louise/media", { method: "POST", body: fd });
+      const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+      if (res.ok && data.url) props.onSet(data.url);
+      else setError(data.error || `Upload failed (${res.status})`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      input.value = "";
+    }
+  };
+
+  return (
+    <div class="louise-field">
+      <span class="louise-field-label">{props.label}</span>
+      <Show when={props.value}>
+        <img class="louise-sections-img" src={props.value} alt="" />
+      </Show>
+      <div class="louise-sections-img-actions">
+        <label class="louise-btn louise-btn-xs">
+          <Icon name="image" /> {uploading() ? "Uploading…" : props.value ? "Replace" : "Upload"}
+          <input
+            type="file"
+            accept="image/*"
+            class="louise-hidden-file"
+            onChange={onUpload}
+            disabled={uploading()}
+          />
+        </label>
+        <Show when={props.value}>
+          <button class="louise-btn louise-btn-xs" type="button" onClick={() => props.onSet("")}>
+            <Icon name="trash" /> Clear
+          </button>
+        </Show>
+      </div>
+      <Show when={error()}>
+        <span class="louise-sections-img-error">{error()}</span>
+      </Show>
+    </div>
+  );
 }
 
 /**
@@ -311,18 +374,29 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
                 {/* Non-visible fields (edited here, not on the page). */}
                 <For each={dockFields(item)}>
                   {([key, field]) => (
-                    <label class="louise-field">
-                      <span class="louise-field-label">{field.label ?? humanize(key)}</span>
-                      <input
-                        class="louise-input"
+                    <Show
+                      when={field.type === "image"}
+                      fallback={
+                        <label class="louise-field">
+                          <span class="louise-field-label">{field.label ?? humanize(key)}</span>
+                          <input
+                            class="louise-input"
+                            value={String(item[key] ?? "")}
+                            placeholder={field.placeholder}
+                            onInput={(e) => {
+                              set("items", i(), key, e.currentTarget.value);
+                              touched();
+                            }}
+                          />
+                        </label>
+                      }
+                    >
+                      <ImageDockField
+                        label={field.label ?? humanize(key)}
                         value={String(item[key] ?? "")}
-                        placeholder={field.placeholder}
-                        onInput={(e) => {
-                          set("items", i(), key, e.currentTarget.value);
-                          touched();
-                        }}
+                        onSet={(url) => void structural(() => set("items", i(), key, url))}
                       />
-                    </label>
+                    </Show>
                   )}
                 </For>
 
@@ -362,28 +436,6 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
             )}
           </For>
 
-          <div class="louise-sections-add">
-            <button class="louise-btn" type="button" onClick={() => setAdding((v) => !v)}>
-              <Icon name="plus" /> Add section
-            </button>
-            <Show when={adding()}>
-              <div class="louise-sections-palette" role="menu">
-                <For each={Object.entries(props.catalog)}>
-                  {([type, def]) => (
-                    <button
-                      class="louise-slash-item"
-                      type="button"
-                      role="menuitem"
-                      onClick={() => addSection(type)}
-                    >
-                      {def.label}
-                    </button>
-                  )}
-                </For>
-              </div>
-            </Show>
-          </div>
-
           <div class="louise-form-actions">
             <button
               class="louise-btn louise-btn-primary"
@@ -393,9 +445,27 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
             >
               {status() === "saving" ? "Saving…" : "Save"}
             </button>
-            <span class="louise-muted louise-sections-hint">
-              Click any text on the page to edit it.
-            </span>
+            <div class="louise-sections-add">
+              <button class="louise-btn" type="button" onClick={() => setAdding((v) => !v)}>
+                <Icon name="plus" /> Add section
+              </button>
+              <Show when={adding()}>
+                <div class="louise-sections-palette" role="menu">
+                  <For each={Object.entries(props.catalog)}>
+                    {([type, def]) => (
+                      <button
+                        class="louise-slash-item"
+                        type="button"
+                        role="menuitem"
+                        onClick={() => addSection(type)}
+                      >
+                        {def.label}
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </Show>
+            </div>
           </div>
         </div>
       </Show>

@@ -21,7 +21,9 @@ import {
   validateValue,
 } from "./validation.js";
 
-export type SectionFieldType = "text" | "textarea" | "array";
+// `image` is a media URL (string), edited in the dock via an upload/clear control
+// rather than in place; it validates as a string like text/textarea.
+export type SectionFieldType = "text" | "textarea" | "array" | "image";
 
 export interface SectionField {
   type: SectionFieldType;

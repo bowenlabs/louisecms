@@ -10,6 +10,7 @@ const catalog: SectionCatalog = {
       heading: { type: "text", validation: (r) => r.required().max(80) },
       tagline: { type: "textarea" },
       ctaHref: { type: "text", inline: false },
+      logo: { type: "image" },
     },
   },
   featureGrid: {
@@ -90,6 +91,14 @@ describe("validateSections — field types", () => {
   it("validates array item subfields by type", async () => {
     const e = await errors([{ _type: "featureGrid", items: [{ title: 3, body: "b" }] }]);
     expect(e.some((x) => x.path === "sections[0].items[0].title")).toBe(true);
+  });
+
+  it("rejects a non-string image field but accepts a URL string", async () => {
+    const bad = await errors([{ _type: "hero", heading: "ok", logo: 123 }]);
+    expect(bad.some((x) => x.path === "sections[0].logo" && x.message.includes("string"))).toBe(
+      true,
+    );
+    expect(await errors([{ _type: "hero", heading: "ok", logo: "/media/x.png" }])).toEqual([]);
   });
 });
 

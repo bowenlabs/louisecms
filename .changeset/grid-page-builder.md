@@ -35,6 +35,10 @@ Grid page-builder + editor packaging fixes.
   each field matches its declared shape (with optional per-field `validation` Rule
   chains reused from the collection validator). `pagesRoute` gains a `validate`
   hook; a failed validation is a `422 { error, violations }` the dock surfaces.
+- **`image` section fields**: a new field type edited via a dock upload / clear
+  control (POSTs to the site's media route); the bespoke component renders the
+  uploaded URL (e.g. a hero logo) or its own fallback. The dock also moved
+  **Add section** beside **Save** under the footer divider.
 - **Type**: brand type is now **Roboto Flex** throughout (`theme/fonts.css` +
   client chrome); headings are the same family at a heavier weight (no Hepta Slab).
 - **Sanitizer** (`louisecms/security`): the inline-`style` allowlist now accepts a

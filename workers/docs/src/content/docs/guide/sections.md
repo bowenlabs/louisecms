@@ -60,9 +60,10 @@ export const SECTIONS: SectionCatalog = {
 };
 ```
 
-Field types are `text`, `textarea`, and `array` (repeatable, with `itemFields`).
-A field defaults to being edited in place; set `inline: false` for a value with
-no visible text to click (a link URL, an image ref).
+Field types are `text`, `textarea`, `array` (repeatable, with `itemFields`), and
+`image`. Plain text is edited in place; `array` and `image` are edited in the
+dock (an `image` gets an upload / clear control that POSTs to your media route),
+as is any field you mark `inline: false` (e.g. a link URL with no visible text).
 
 ## Rendering + edit markers
 
