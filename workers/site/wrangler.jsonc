@@ -1,6 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "louisecms",
+  // Must match the Cloudflare Workers Builds service that serves louisecms.com
+  // (`louisecmscom`). A mismatch here sends local `wrangler` commands (secret
+  // put, deployments, d1 execute) to a different/auto-created worker.
+  "name": "louisecmscom",
   "compatibility_date": "2026-06-20",
   "compatibility_flags": ["nodejs_compat"],
   // @astrojs/cloudflare v14 dropped `workerEntryPoint`, so `main` points at the
