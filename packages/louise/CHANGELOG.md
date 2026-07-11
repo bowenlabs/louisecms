@@ -1,5 +1,140 @@
 # louisecms
 
+## 0.8.0
+
+### Minor Changes
+
+- a5b3a7a: Declarative form builder (`louisecms/forms`) — define a form's fields once and
+  derive the submission table, the public capture route, validation, and the review
+  columns from that single definition (#46, Tier 1). `inquiries` is now the
+  **built-in default form**.
+
+  - **`defineForm({ name, fields, spam?, notify? })`** → `{ columns, table,
+reviewColumns }`. Field `type` is `text | email | tel | url | textarea | number
+| select | checkbox | date`; `required` drives both a `NOT NULL` column and a
+    required check; `validation` reuses the shared `Rule`/`validateValue` engine, so
+    there is one validation definition. `validateSubmission` / `coerceFormValue` run
+    it (per-type format checks, select allowlist, number coercion).
+  - **`formRoute(config)`** (`louisecms/editor`) — the **public** capture companion
+    to `inquiriesRoute`: same-origin-guarded (not session-gated), validates + coerces
+    (`422` with per-field violations), enforces an opt-in spam guard (KV rate limit +
+    Turnstile via `verifyTurnstileToken`), and inserts the row. Mounted at
+    `/api/louise/forms/<name>`.
+  - **Folded inquiries.** `inquiries`/`inquiriesColumns` are now derived from a
+    built-in `inquiriesForm` (`louisecms/db`) — same table shape as before, so no
+    base migration. The review route + Inquiries panel were already form-agnostic.
+  - **Dogfood.** The marketing site gains a contact section that POSTs to
+    `formRoute`; a submission lands in the Inquiries tab with no hand-rolled handler,
+    columns, or validation.
+
+  `json()` (`louisecms/editor`) now accepts optional response headers.
+
+- ffa7572: Forms Tier 3 (#46) — notifications, a shared submissions catalog, and silent spam
+  heuristics.
+
+  - **Notifications.** A form's `notify` fires after a successful insert, **off the
+    response path** (`waitUntil`): `notify.webhook` POSTs `{ form, values }`;
+    `notify.email` sends via a `mailer` passed to `formRoute` (wrap your `EMAIL`
+    binding — Louise stays decoupled from any transport). A notification failure
+    never fails the submission. New `notifySubmission` / `renderSubmissionText`.
+  - **Silent heuristics.** `spam.honeypot` (a decoy field) and `spam.minSeconds` (a
+    too-fast-submit check against the render helper's `louise_ts`) reject a likely
+    bot with a fake success and no insert. New `looksLikeSpam`; the `<Form>` helper
+    emits the honeypot + timestamp.
+  - **Form catalog (no new table each time).** New shared `submissions` table
+    (`louisecms/db`). `formRoute`'s `genericTable` stores an ad-hoc form as
+    `{ form, data }` (no migration per form); the new `submissionsRoute`
+    (`louisecms/editor`) reviews one form's rows for a drawer tab.
+  - Dogfood: the marketing site's contact form gains the honeypot + a 2s minimum.
+
+- 406158a: Forms Tier 2 (#46) — a headless `<Form>` render helper, a `file` field type, and
+  an optional TanStack Form adapter.
+
+  - **`<Form>` / `mountForm`** (`louisecms/client`) — renders accessible inputs from
+    a `defineForm` catalog and **mirrors the server validation client-side** (reuses
+    `validateSubmission` → the shared `Rule` engine, no second definition), then
+    POSTs to the form's `formRoute`. Unstyled by default (`louise-form*` class
+    hooks); maps a server `422` back onto the fields.
+  - **`file` field type** — renders a file input that uploads through the `media`
+    route and stores the returned URL.
+  - **Optional TanStack Form adapter** — `tanstackFormValidators(config)` /
+    `tanstackFieldValidator(key, field)` (`louisecms/forms`) return validators in
+    `@tanstack/solid-form`'s shape, backed by the same `Rule` engine, so a complex
+    hand-built form keeps one validation definition. Dependency-free (the consumer
+    brings the peer). `validateField` is now exported for reuse.
+
+- 8b90a24: Media assets now carry first-class **alt/caption** and intrinsic **dimensions**,
+  so the media library is a described set of assets rather than a wall of
+  filenames (#16).
+
+  - **Dimensions on upload.** `putMedia` reads intrinsic `width`/`height` from the
+    image header (new `imageDimensions` — PNG/GIF/JPEG/WebP, no pixel decode; `null`
+    for formats it can't read), and `mediaRoute`'s upload records them. `PutMediaResult`
+    gains `width`/`height`.
+  - **Edit alt/caption.** `mediaRoute` gains `PATCH /api/louise/media` (`{ key, alt,
+caption }`) — only those two columns are writable, editor-guarded and
+    same-origin-checked. The drawer Media panel gets an inline alt/caption editor per
+    asset and shows the real alt (not the filename) on the thumbnail.
+  - **Alt flows to rendered images.** New `mediaMetaByUrl(db, table, base)` returns a
+    `url → { alt, caption, width, height }` map so a render pass can fill an image's
+    alt from its asset-level default when no per-usage alt is set (a per-usage value
+    always wins). Wired into the dogfood's public section render.
+
+  Additive and back-compatible: `width`/`height`/`alt`/`caption` are optional
+  columns that stay `NULL` until set.
+
+- 8b0068a: Extract logic that Louise sites were duplicating into the package, and add
+  generic multi-role auth primitives so sites converge on maintained code.
+
+  **New**
+
+  - `louisecms/email` — themed transactional template shell: `renderEmailShell`,
+    `mailButton`, `mailFallbackLink`, and a `MailTheme` (palette + fonts + layout
+    tokens). Sites keep only their palette and copy.
+  - `louisecms/client/drawer` + `louisecms/editor` — a first-class **Users** panel
+    (opt-in top strip, `user` icon) for managing CMS editors, paired with the new
+    `editorsRoute` factory.
+  - `louisecms/auth` — `requireEditorFromContext` (framework-agnostic
+    Astro-context guard); and generic dynamic-role primitives `hasRole` /
+    `requireRole` (arbitrary, site-defined role strings) + `resolveSession`
+    (returns the role for any signed-in user, no gating), so a site can build its
+    own multi-role auth layer. Louise's own CMS auth stays binary and no role
+    names are baked in.
+  - `louisecms/editor` — `pagesRoute` gains `transform`, `reservedSlugs`, and
+    `afterWrite` hooks so sites can drop their hand-rolled pages CRUD.
+  - `louisecms/commerce/fourthwall` — `mapFourthwallOrder` plus
+    `fourthwallMoneyToCents` / `mapFourthwallOrderStatus` for mapping order
+    webhooks to a normalized, storage-ready shape.
+  - `louisecms/astro` — a new **optional** subpath (`astro` is an optional peer)
+    with `createLouiseMiddleware`, the shared site middleware (rate-limit →
+    editor session + sticky `?louise` edit mode → CMS-freshness cache/CSP/security
+    headers) as a config-driven factory.
+
+  **Migration (required on upgrade)**
+
+  `getLouiseAuth` now declares standard `firstName` / `lastName` fields on the user
+  table (used by the Users panel). Because Better Auth references declared fields,
+  you **must** add the columns when upgrading: regenerate the auth schema
+  (`generateAuthSchemaSql`) and apply the migration. Both columns are nullable and
+  additive — no data loss, no `NOT NULL` — but they are not optional to apply.
+
+### Patch Changes
+
+- c661493: Fix `commerce/square` `listCatalogItems` hitting a non-existent endpoint. It
+  POSTed to `/v2/catalog/search-catalog-objects`, which Square returns `404
+Resource not found` for — the SearchCatalogObjects endpoint is `/v2/catalog/
+search`. Because the call threw, consumers that guard on "is Square configured"
+  could silently fall back to seed/empty data with a valid token, misdiagnosed as a
+  bad token. Request/response shapes are unchanged; only the URL path was wrong.
+  Adds a regression test pinning the endpoint path and cursor paging. (#58)
+- f4e9cfa: Production-readiness pass from the package audit:
+
+  - `mediaMetaByUrl(db, table, base, urls?)` now takes an optional `urls` list and
+    scopes the lookup to just those assets (a bounded `IN (…)` query) instead of
+    scanning the whole `media` table — so the render-time asset-alt fallback stays
+    cheap on a large library. Omitting `urls` keeps the previous full-table load.
+  - Declare `engines.node >= 20`.
+
 ## 0.7.1
 
 ### Patch Changes
