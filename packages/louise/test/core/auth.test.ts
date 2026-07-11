@@ -3,13 +3,16 @@ import {
   activeCaptchaSecret,
   defaultResolveAdmins,
   handleAuthRequest,
+  hasRole,
   isAllowedSignInEmail,
   isSameOrigin,
   type LouiseAuth,
   type LouiseAuthEnv,
   pick,
   requireEditor,
+  requireRole,
   resolveEditorSession,
+  resolveSession,
   turnstileSecret,
   turnstileSiteKey,
   TURNSTILE_PLACEHOLDER,
@@ -165,6 +168,65 @@ describe("requireEditor", () => {
 
   it("passes a same-origin editor mutation", () => {
     expect(requireEditor({ request: goodReq, editor })).toBeNull();
+  });
+});
+
+describe("resolveSession (generic, ungated)", () => {
+  const authWith = (user: unknown): LouiseAuth =>
+    ({
+      handler: async () => new Response(),
+      api: { getSession: async () => (user ? { user } : null) },
+    }) as unknown as LouiseAuth;
+  const req = new Request("https://x.com/portal");
+
+  it("returns any signed-in user with their role (no role gate)", async () => {
+    expect(
+      await resolveSession(authWith({ id: "u1", email: "c@x.com", name: "C", role: "customer" }), req),
+    ).toEqual({ userId: "u1", email: "c@x.com", name: "C", role: "customer" });
+  });
+
+  it("defaults role to empty string and null on no session", async () => {
+    expect(
+      (await resolveSession(authWith({ id: "u2", email: "n@x.com", name: "N" }), req))?.role,
+    ).toBe("");
+    expect(await resolveSession(authWith(null), req)).toBeNull();
+  });
+});
+
+describe("hasRole", () => {
+  it("tests membership against arbitrary site-defined roles", () => {
+    expect(hasRole("employee", ["employee", "manager"])).toBe(true);
+    expect(hasRole("customer", ["employee", "manager"])).toBe(false);
+    expect(hasRole(null, ["employee"])).toBe(false);
+    expect(hasRole(undefined, [])).toBe(false);
+  });
+});
+
+describe("requireRole", () => {
+  const good: RequestInit = { method: "POST", headers: { origin: "https://x.com" } };
+  const reqWith = (role: string | null | undefined, init: RequestInit = good) =>
+    ({ request: new Request("https://x.com/api", init), role }) as const;
+
+  it("403s a cross-origin mutation", () => {
+    const bad = reqWith("employee", { method: "POST", headers: { origin: "https://evil.com" } });
+    expect(requireRole(bad, ["employee"])?.status).toBe(403);
+  });
+
+  it("401s when there is no role (unauthenticated)", () => {
+    expect(requireRole(reqWith(null), ["employee"])?.status).toBe(401);
+  });
+
+  it("403s a signed-in user whose role isn't allowed", () => {
+    expect(requireRole(reqWith("customer"), ["employee", "manager"])?.status).toBe(403);
+  });
+
+  it("passes a same-origin request with an allowed role", () => {
+    expect(requireRole(reqWith("employee"), ["employee", "manager"])).toBeNull();
+  });
+
+  it("skips the origin check for reads (mutation=false)", () => {
+    const read = reqWith("customer", { method: "GET", headers: {} });
+    expect(requireRole(read, ["customer"], false)).toBeNull();
   });
 });
 

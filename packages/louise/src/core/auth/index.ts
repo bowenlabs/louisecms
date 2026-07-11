@@ -13,16 +13,19 @@ export {
   type SessionKV,
 } from "./auth.js";
 export { defaultResolveAdmins, isAllowedSignInEmail } from "./admins.js";
-export { resolveEditorSession } from "./session.js";
+export { resolveEditorSession, resolveSession } from "./session.js";
 export { handleAuthRequest } from "./handler.js";
 export { authSchemaOptions, type AuthSchemaConfig, generateAuthSchemaSql } from "./schema-gen.js";
 export {
   type EditorContext,
   type EditorRequest,
+  hasRole,
   isSameOrigin,
   pick,
   requireEditor,
   requireEditorFromContext,
+  requireRole,
+  type RoleRequest,
 } from "./guard.js";
 export {
   activeCaptchaSecret,

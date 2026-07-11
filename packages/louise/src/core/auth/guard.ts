@@ -67,6 +67,42 @@ export function requireEditorFromContext(ctx: EditorContext, mutation = true): R
   return requireEditor({ request: ctx.request, editor: ctx.locals.editor ?? null }, mutation);
 }
 
+/** True when `role` is one of `allowed`. Roles are arbitrary, site-defined
+ *  strings — Louise bakes none in. */
+export function hasRole(role: string | null | undefined, allowed: readonly string[]): boolean {
+  return role != null && allowed.includes(role);
+}
+
+/** A request plus the current user's resolved role (from a session). */
+export interface RoleRequest {
+  request: Request;
+  role: string | null | undefined;
+}
+
+/**
+ * Guard for role-gated endpoints: a same-origin (CSRF) check on mutations plus
+ * a membership test of the session's `role` against `allowed`. Returns 401 when
+ * unauthenticated, 403 on a wrong role or bad origin, or null to proceed.
+ * Generic and unopinionated — it works with any site's roles and any auth
+ * instance; the CMS editor gate is the binary {@link requireEditor}.
+ */
+export function requireRole(
+  ctx: RoleRequest,
+  allowed: readonly string[],
+  mutation = true,
+): Response | null {
+  if (mutation && !isSameOrigin(ctx.request)) {
+    return Response.json({ error: "Bad origin" }, { status: 403 });
+  }
+  if (ctx.role == null) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!allowed.includes(ctx.role)) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+  return null;
+}
+
 /** Copy only allowlisted keys from a payload. */
 export function pick(input: Record<string, unknown>, allow: Set<string>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
