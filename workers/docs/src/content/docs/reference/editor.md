@@ -128,6 +128,7 @@ export const ALL: APIRoute = (ctx) =>
 | `saveRoute`         | `/api/louise/save`                   | POST (inline field save)                                      |
 | `formRoute`         | `/api/louise/forms/<name>`           | **public** POST capture (same-origin + spam guard)            |
 | `inquiriesRoute`    | `/api/louise/inquiries`              | GET list · DELETE one                                         |
+| `submissionsRoute`  | `/api/louise/submissions/<form>`     | GET list · DELETE one — a form's rows in the shared table     |
 | `seedRoute`         | `/api/louise/seed`                   | seeds the `site_settings` singleton (idempotent)              |
 
 - **`pagesRoute`** — CMS pages CRUD. Create/update are allowlisted to
@@ -164,8 +165,15 @@ resolveEditor, validate? }`; **mount it before `pagesRoute`** so its
   from a [`defineForm`](/guide/forms/) definition. POST only, **same-origin-guarded
   but not session-gated** (anyone may submit): validates + coerces against the
   form's fields (`422` with per-field `violations`), enforces the declared spam
-  guard (KV rate limit via `rateLimitKv`, Turnstile via `turnstileSecret`), and
-  inserts the row. Mounted at `/api/louise/forms/<name>`.
+  guard (KV rate limit via `rateLimitKv`, Turnstile via `turnstileSecret`, and
+  silent honeypot/timing heuristics), inserts the row, and fires the form's
+  `notify` (webhook + email via a `mailer`) off the response path. Pass
+  `genericTable` to store into the shared `submissions` table (`{ form, data }`)
+  so an ad-hoc form needs no migration. Mounted at `/api/louise/forms/<name>`.
+- **`submissionsRoute`** — the editor-gated review companion for a generic
+  `formRoute` (`genericTable`): GET lists one `form`'s rows from the shared
+  `submissions` table newest-first (parsing `data` back onto each row), DELETE
+  removes one by `?id=`. Gives each catalog form its own review tab over one table.
 - **`settingsRoute`** — GET/PATCH the `site_settings` singleton. **Extensible,
   not a closed set:** it patches an allowlisted structured base (`columns`, the
   framework [`siteSettingsColumns`](/reference/db/)) and merges site-declared

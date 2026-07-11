@@ -44,17 +44,35 @@ const idx = _editIndex;
       <input class="input input-bordered w-full" type="email" name="email" placeholder="Email" required />
       <input class="input input-bordered w-full" name="regarding" placeholder="Regarding" />
       <textarea class="textarea textarea-bordered w-full" name="message" rows="5" placeholder="Message" required></textarea>
+      {/* Tier-3 spam heuristics: an off-screen honeypot a bot fills, and a
+          render timestamp for the too-fast-submit check. Both ride in the body. */}
+      <input type="text" name="website" tabindex="-1" autocomplete="off" class="louise-hp" aria-hidden="true" />
+      <input type="hidden" name="louise_ts" value="" />
       <button class="btn btn-primary" type="submit">Send</button>
       <p class="louise-contact-status text-center text-sm" role="status" aria-live="polite"></p>
     </form>
   </div>
 </section>
 
+<style>
+  /* Keep the honeypot out of sight and out of the tab order. */
+  .louise-hp {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+  }
+</style>
+
 <script>
   // Progressive enhancement: send JSON to the form's capture route and surface
   // validation (422) / rate-limit (429) results without a full navigation.
   document.querySelectorAll<HTMLFormElement>("form.louise-contact").forEach((form) => {
     const status = form.querySelector<HTMLElement>(".louise-contact-status");
+    // Stamp when the form became interactive (the too-fast-submit heuristic).
+    const ts = form.querySelector<HTMLInputElement>('input[name="louise_ts"]');
+    if (ts) ts.value = String(Date.now());
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       if (status) status.textContent = "Sending…";

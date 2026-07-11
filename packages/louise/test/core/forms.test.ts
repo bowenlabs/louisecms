@@ -296,4 +296,85 @@ describe("formRoute", () => {
     expect(third?.status).toBe(429);
     expect(third?.headers.get("Retry-After")).toBeTruthy();
   });
+
+  it("silently accepts (201, no insert) a filled honeypot", async () => {
+    const hp = defineForm({
+      name: "inquiries",
+      fields: { email: { type: "email", label: "Email", required: true } },
+      spam: { honeypot: "website" },
+    });
+    const { db, inserts } = makeD1();
+    const res = await formRoute({ form: hp })(
+      post({ email: "a@b.co", website: "http://spam" }),
+      { DB: db },
+      ctx,
+    );
+    expect(res?.status).toBe(201);
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("silently accepts (201, no insert) a too-fast submit", async () => {
+    const t = defineForm({
+      name: "inquiries",
+      fields: { email: { type: "email", label: "Email", required: true } },
+      spam: { minSeconds: 3 },
+    });
+    const { db, inserts } = makeD1();
+    const res = await formRoute({ form: t })(
+      post({ email: "a@b.co", louise_ts: Date.now() }),
+      { DB: db },
+      ctx,
+    );
+    expect(res?.status).toBe(201);
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("stores to the shared generic table as {form,data} when genericTable is set", async () => {
+    const { db, inserts } = makeD1();
+    const res = await formRoute({ form, genericTable: "submissions" })(
+      post({ email: "a@b.co", message: "hi" }),
+      { DB: db },
+      ctx,
+    );
+    expect(res?.status).toBe(201);
+    expect(inserts[0]?.sql).toContain('INSERT INTO "submissions"');
+    expect(inserts[0]?.sql).toContain('"form","data","created_at"');
+    expect(inserts[0]?.binds[0]).toBe("inquiries");
+    expect(JSON.parse(String(inserts[0]?.binds[1]))).toMatchObject({
+      email: "a@b.co",
+      message: "hi",
+    });
+  });
+
+  it("fires webhook + email notifications off the response path", async () => {
+    const notifyForm = defineForm({
+      name: "inquiries",
+      fields: { email: { type: "email", label: "Email", required: true } },
+      notify: { webhook: "https://hook.example/x", email: { to: "me@x.co" } },
+    });
+    const { db } = makeD1();
+    const hits: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (u: string) => {
+        hits.push(String(u));
+        return new Response("ok");
+      }),
+    );
+    const mailed: { to: string }[] = [];
+    const waits: Promise<unknown>[] = [];
+    const wctx = {
+      waitUntil: (p: Promise<unknown>) => waits.push(p),
+    } as unknown as ExecutionContext;
+    const res = await formRoute({
+      form: notifyForm,
+      mailer: () => (m) => {
+        mailed.push(m);
+      },
+    })(post({ email: "a@b.co" }), { DB: db }, wctx);
+    expect(res?.status).toBe(201);
+    await Promise.all(waits);
+    expect(hits).toContain("https://hook.example/x");
+    expect(mailed[0]).toMatchObject({ to: "me@x.co" });
+  });
 });

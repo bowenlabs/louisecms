@@ -6,6 +6,7 @@
 
 export { columnName, deriveFormColumns } from "./columns.js";
 export { defineForm } from "./defineForm.js";
+export { looksLikeSpam, notifySubmission, renderSubmissionText } from "./notify.js";
 export {
   type TanstackFieldValidator,
   tanstackFieldValidator,
@@ -19,6 +20,7 @@ export type {
   FormDefinition,
   FormField,
   FormFieldType,
+  FormMailer,
   FormNotifyConfig,
   FormReviewColumn,
   FormSpamConfig,

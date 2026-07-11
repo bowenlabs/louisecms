@@ -8,8 +8,15 @@
 // so the guard is same-origin (CSRF) + the spam checks, not an editor session.
 
 import { isSameOrigin } from "../auth/guard.js";
-import { validateSubmission, verifyTurnstileToken } from "../forms/index.js";
-import { columnName, type FormDefinition } from "../forms/index.js";
+import {
+  columnName,
+  type FormDefinition,
+  type FormMailer,
+  looksLikeSpam,
+  notifySubmission,
+  validateSubmission,
+  verifyTurnstileToken,
+} from "../forms/index.js";
 import { type KVLike, rateLimit } from "../security/rate-limit.js";
 import type { WorkerRoute } from "../worker/index.js";
 import { type EditorRouteEnv, ident, json, matchPath } from "./shared.js";
@@ -29,6 +36,14 @@ export interface FormRouteConfig<Env extends FormRouteEnv = FormRouteEnv> {
   clientKey?: (request: Request) => string;
   /** Turnstile secret, when the form declares `spam.turnstile`. */
   turnstileSecret?: (env: Env) => string;
+  /** Email transport for `notify.email` — wrap your `EMAIL` binding here. */
+  mailer?: (env: Env) => FormMailer;
+  /**
+   * Store into the shared generic `submissions` table as `{ form, data }`
+   * instead of a per-form typed table — so an ad-hoc form needs no migration.
+   * Pass the ready-made `submissions` table name (default `"submissions"`).
+   */
+  genericTable?: string;
   /** Fired after a successful insert with the stored values (Tier 3 hook). */
   onSubmit?: (values: Record<string, unknown>, env: Env) => void | Promise<void>;
 }
@@ -68,12 +83,16 @@ export function formRoute<Env extends FormRouteEnv = FormRouteEnv>(
   const path = config.path ?? `/api/louise/forms/${form.name}`;
   const fieldKeys = Object.keys(form.fields);
 
-  return async (request, env) => {
+  return async (request, env, ctx) => {
     if (!matchPath(request, path)) return undefined;
     if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
     if (!isSameOrigin(request)) return json({ error: "Forbidden" }, 403);
 
     const body = await readBody(request);
+
+    // Silent heuristics (honeypot / too-fast submit): return a fake success so a
+    // bot can't tune, and never insert. Runs before the visible checks.
+    if (looksLikeSpam(form, body)) return json({ ok: true }, 201);
 
     // Spam guard — rate limit first (cheap), then Turnstile (a network call).
     if (form.spam?.rateLimit && config.rateLimitKv) {
@@ -104,22 +123,41 @@ export function formRoute<Env extends FormRouteEnv = FormRouteEnv>(
     const errors = violations.filter((v) => v.severity === "error");
     if (errors.length > 0) return json({ error: "validation", violations }, 422);
 
-    // Insert only the declared columns (+ created_at). Raw D1: values are bound,
-    // never interpolated; column names are validated identifiers from the form.
-    const cols = fieldKeys.map((k) => columnName(k));
-    const placeholders = fieldKeys.map((_, i) => `?${i + 1}`);
-    const binds = fieldKeys.map((k) => bindValue(values[k]));
-    cols.push("created_at");
-    placeholders.push(`?${fieldKeys.length + 1}`);
-    binds.push(Math.floor(Date.now() / 1000));
-    const colList = cols.map((c) => ident(c)).join(",");
-    await env.DB.prepare(
-      `INSERT INTO ${ident(form.name)} (${colList}) VALUES (${placeholders.join(",")})`,
-    )
-      .bind(...binds)
-      .run();
+    const now = Math.floor(Date.now() / 1000);
+    if (config.genericTable) {
+      // Shared store: one row is `{ form, data }` — no per-form migration.
+      await env.DB.prepare(
+        `INSERT INTO ${ident(config.genericTable)} ("form","data","created_at") VALUES (?1,?2,?3)`,
+      )
+        .bind(form.name, JSON.stringify(values), now)
+        .run();
+    } else {
+      // Typed table: insert only the declared columns (+ created_at). Raw D1:
+      // values are bound, never interpolated; column names are validated
+      // identifiers from the form.
+      const cols = fieldKeys.map((k) => columnName(k));
+      const placeholders = fieldKeys.map((_, i) => `?${i + 1}`);
+      const binds = fieldKeys.map((k) => bindValue(values[k]));
+      cols.push("created_at");
+      placeholders.push(`?${fieldKeys.length + 1}`);
+      binds.push(now);
+      const colList = cols.map((c) => ident(c)).join(",");
+      await env.DB.prepare(
+        `INSERT INTO ${ident(form.name)} (${colList}) VALUES (${placeholders.join(",")})`,
+      )
+        .bind(...binds)
+        .run();
+    }
 
-    if (config.onSubmit) await config.onSubmit(values, env);
+    // Notifications fire off the response path so a slow webhook/mail never
+    // delays the visitor (waitUntil when available, else fire-and-forget).
+    const announce = async () => {
+      await notifySubmission(form, values, config.mailer?.(env));
+      if (config.onSubmit) await config.onSubmit(values, env);
+    };
+    if (ctx?.waitUntil) ctx.waitUntil(announce());
+    else void announce();
+
     return json({ ok: true }, 201);
   };
 }

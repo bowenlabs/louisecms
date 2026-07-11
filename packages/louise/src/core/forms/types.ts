@@ -61,12 +61,35 @@ export interface FormSpamConfig {
   /** Fixed-window rate limit, keyed by client (typically IP). Enforced when
    *  `formRoute` is given a KV binding. */
   rateLimit?: { max: number; windowSec: number };
+  /**
+   * Honeypot: a decoy field name a bot fills but a human never sees. Any
+   * non-empty value silently rejects the submission. The render helper emits it
+   * hidden + `autocomplete="off"`. Default off.
+   */
+  honeypot?: string;
+  /**
+   * Minimum seconds between the form rendering and its submit — a bot posts
+   * near-instantly. Enforced against a `louise_ts` timestamp the render helper
+   * stamps at mount. Default off.
+   */
+  minSeconds?: number;
 }
+
+/** A minimal mailer the site provides so `formRoute` can send an email
+ *  notification without coupling to any one email binding. Wrap your `EMAIL`
+ *  binding + `louisecms/email` templates here. */
+export type FormMailer = (message: {
+  to: string;
+  subject: string;
+  text: string;
+}) => void | Promise<void>;
 
 /** Where a successful submission is announced (Tier 3). */
 export interface FormNotifyConfig {
-  /** POST the submission JSON to this webhook URL. */
+  /** POST `{ form, values }` to this webhook URL (fire-and-forget). */
   webhook?: string;
+  /** Email a notification. Requires a `mailer` on the route config. */
+  email?: { to: string; subject?: string };
 }
 
 /** A declared form: fields + optional spam/notify policy. */

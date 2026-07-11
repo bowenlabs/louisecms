@@ -16,6 +16,7 @@ import {
   saveRoute,
   seedRoute,
   settingsRoute,
+  submissionsRoute,
   validateSettingsImages,
 } from "../../src/core/editor/index.js";
 
@@ -122,6 +123,50 @@ describe("inquiriesRoute", () => {
     const route = inquiriesRoute({ table: inquiries, resolveEditor: () => editor });
     const res = await route(req("POST"), { DB: db }, ctx);
     expect(res?.status).toBe(405);
+  });
+});
+
+describe("submissionsRoute (generic form review)", () => {
+  const base = "https://site.example/api/louise/submissions/rsvp";
+
+  it("lists a form's submissions with parsed data flattened onto each row", async () => {
+    const rows = [{ id: 2, data: JSON.stringify({ name: "Ada", seats: 2 }), created_at: 123 }];
+    const { db, calls } = makeD1(() => rows);
+    const res = await submissionsRoute({ form: "rsvp", resolveEditor: () => editor })(
+      new Request(base, { headers: { origin: "https://site.example" } }),
+      { DB: db },
+      ctx,
+    );
+    expect(res?.status).toBe(200);
+    const body = (await res?.json()) as { inquiries: Record<string, unknown>[] };
+    expect(body.inquiries[0]).toMatchObject({ id: 2, name: "Ada", seats: 2, createdAt: 123 });
+    expect(calls[0]?.sql).toContain('WHERE "form" = ?1');
+    expect(calls[0]?.binds[0]).toBe("rsvp");
+  });
+
+  it("401s an unauthenticated list", async () => {
+    const { db } = makeD1(() => []);
+    const res = await submissionsRoute({ form: "rsvp", resolveEditor: () => null })(
+      new Request(base),
+      { DB: db },
+      ctx,
+    );
+    expect(res?.status).toBe(401);
+  });
+
+  it("deletes one by id, scoped to the form", async () => {
+    const { db, calls } = makeD1(() => [{ id: 5 }]);
+    const res = await submissionsRoute({ form: "rsvp", resolveEditor: () => editor })(
+      new Request(`${base}?id=5`, {
+        method: "DELETE",
+        headers: { origin: "https://site.example" },
+      }),
+      { DB: db },
+      ctx,
+    );
+    expect(res?.status).toBe(200);
+    expect(calls[0]?.sql).toContain('DELETE FROM "submissions"');
+    expect(calls[0]?.binds).toEqual([5, "rsvp"]);
   });
 });
 

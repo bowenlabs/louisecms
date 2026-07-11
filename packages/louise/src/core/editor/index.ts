@@ -19,6 +19,7 @@ export {
 export { type EditorsRouteConfig, editorsRoute } from "./editors.js";
 export { type FormRouteConfig, type FormRouteEnv, formRoute } from "./form.js";
 export { inquiriesRoute, type InquiriesRouteConfig } from "./inquiries.js";
+export { type SubmissionsRouteConfig, submissionsRoute } from "./submissions.js";
 export {
   partitionSettingsPatch,
   type SettingsPartition,

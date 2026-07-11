@@ -23,3 +23,4 @@ export * from "./site-settings.js";
 export * from "./pages.js";
 export * from "./inquiries.js";
 export * from "./media.js";
+export * from "./submissions.js";
