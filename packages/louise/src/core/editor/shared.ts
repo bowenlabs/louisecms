@@ -28,9 +28,10 @@ export type ResolveEditor<Env> = (
   env: Env,
 ) => EditorSession | null | Promise<EditorSession | null>;
 
-/** JSON response with a status (thin wrapper over `Response.json`). */
-export function json(data: unknown, status = 200): Response {
-  return Response.json(data, { status });
+/** JSON response with a status + optional extra headers (thin wrapper over
+ *  `Response.json`). */
+export function json(data: unknown, status = 200, headers?: HeadersInit): Response {
+  return Response.json(data, headers ? { status, headers } : { status });
 }
 
 /** True when the request's pathname is exactly `path`. */

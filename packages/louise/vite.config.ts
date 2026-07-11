@@ -56,6 +56,7 @@ export default {
       "src/core/commerce/stripe.ts",
       "src/core/browser/index.ts",
       "src/core/email/index.ts",
+      "src/core/forms/index.ts",
       "src/core/media/index.ts",
       "src/core/queues/index.ts",
       "src/core/security/index.ts",

@@ -101,6 +101,11 @@
       "import": "./dist/core/email/index.js",
       "default": "./dist/core/email/index.js"
     },
+    "./forms": {
+      "types": "./dist/core/forms/index.d.ts",
+      "import": "./dist/core/forms/index.js",
+      "default": "./dist/core/forms/index.js"
+    },
     "./media": {
       "types": "./dist/core/media/index.d.ts",
       "import": "./dist/core/media/index.js",

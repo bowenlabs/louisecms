@@ -1,0 +1,84 @@
+---
+// Bespoke contact section — dogfoods louisecms/forms (#46). The heading/blurb are
+// editable in place (data-louise-sfield markers); the form itself is generated
+// from the built-in `inquiries` form and POSTs to its `formRoute`
+// (/api/louise/forms/inquiries), which validates + rate-limits + inserts. A
+// submission then shows up in the drawer's Inquiries tab — no hand-rolled POST
+// handler, table, or validation on the site. The inline script progressively
+// enhances the native form: it sends JSON and surfaces field-level 422s.
+interface Props {
+  heading?: string;
+  blurb?: string;
+  _editIndex?: number;
+  _editMode?: boolean;
+}
+const { heading = "", blurb = "", _editIndex = 0, _editMode: edit = false } = Astro.props;
+const idx = _editIndex;
+---
+
+<section class="px-5 pb-16">
+  <div class="mx-auto max-w-xl">
+    <h2
+      class="text-center text-3xl font-black tracking-tight"
+      data-louise-sfield={edit ? `${idx}.heading` : undefined}
+    >
+      {heading || (edit ? "" : "Get in touch")}
+    </h2>
+    {
+      (edit || blurb) && (
+        <p
+          class="mt-2 text-center text-base-content/70"
+          data-louise-sfield={edit ? `${idx}.blurb` : undefined}
+          data-louise-multiline={edit || undefined}
+        >
+          {blurb}
+        </p>
+      )
+    }
+
+    <form class="louise-contact mt-8 grid gap-4" method="POST" action="/api/louise/forms/inquiries">
+      <div class="grid gap-4 sm:grid-cols-2">
+        <input class="input input-bordered w-full" name="firstName" placeholder="First name" />
+        <input class="input input-bordered w-full" name="lastName" placeholder="Last name" />
+      </div>
+      <input class="input input-bordered w-full" type="email" name="email" placeholder="Email" required />
+      <input class="input input-bordered w-full" name="regarding" placeholder="Regarding" />
+      <textarea class="textarea textarea-bordered w-full" name="message" rows="5" placeholder="Message" required></textarea>
+      <button class="btn btn-primary" type="submit">Send</button>
+      <p class="louise-contact-status text-center text-sm" role="status" aria-live="polite"></p>
+    </form>
+  </div>
+</section>
+
+<script>
+  // Progressive enhancement: send JSON to the form's capture route and surface
+  // validation (422) / rate-limit (429) results without a full navigation.
+  document.querySelectorAll<HTMLFormElement>("form.louise-contact").forEach((form) => {
+    const status = form.querySelector<HTMLElement>(".louise-contact-status");
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (status) status.textContent = "Sending…";
+      const data = Object.fromEntries(new FormData(form).entries());
+      try {
+        const res = await fetch(form.action, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(data),
+        });
+        if (res.ok) {
+          form.reset();
+          if (status) status.textContent = "Thanks — we’ll be in touch.";
+          return;
+        }
+        if (res.status === 422) {
+          const body = (await res.json()) as { violations?: { message: string }[] };
+          if (status) status.textContent = body.violations?.[0]?.message ?? "Please check the form.";
+          return;
+        }
+        if (status) status.textContent = res.status === 429 ? "Too many messages — try again soon." : "Something went wrong.";
+      } catch {
+        if (status) status.textContent = "Network error — please try again.";
+      }
+    });
+  });
+</script>
