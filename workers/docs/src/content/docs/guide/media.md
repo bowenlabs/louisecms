@@ -75,3 +75,24 @@ as the source of truth. Two things make it strict:
 
 Each `mediaBase` knob is optional and back-compatible: omit it and the old
 behavior (any safe `http(s)`/relative image) is unchanged.
+
+## Asset-level alt, caption, and dimensions
+
+The `media` registry table (`mediaColumns` in `louisecms/db`) makes uploads a
+real library rather than a bare file list. Each row carries an **asset-level
+`alt`** and `caption` you set once and reuse wherever the asset appears, plus its
+pixel `width`/`height`.
+
+- **Dimensions are captured on upload.** `putMedia` reads the intrinsic size from
+  the image header (PNG/GIF/JPEG/WebP — no pixel decode) and the `media` route
+  records it. Unknown formats store `NULL` ("when known").
+- **Alt/caption are edited in the Media panel.** Each asset card has an **Alt**
+  button that reveals inline `alt`/`caption` fields, saved with
+  `PATCH /api/louise/media` (`{ key, alt, caption }` — only these two columns are
+  writable). The thumbnail then shows the real alt instead of the filename.
+- **Alt flows to the rendered image as a default.** On the public render, an image
+  with no per-usage alt falls back to its asset's alt. Load the map with
+  `mediaMetaByUrl(env.DB, "media", env.MEDIA_URL)` and fill in the alt while
+  rendering (skip it in edit mode so the editor still sees the true per-usage
+  value). A per-usage alt on the consuming record always wins.
+

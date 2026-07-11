@@ -3,6 +3,7 @@
 // louisecms/editor — the generic `media` route: the site's media library.
 //   GET    /api/louise/media          list tracked assets (the `media` table)
 //   POST   /api/louise/media          upload a verified image + register it
+//   PATCH  /api/louise/media          set an asset's alt/caption by key
 //   DELETE /api/louise/media?key=…     delete after a delete-safety reference scan
 // Wraps louisecms/media's R2 helpers (magic-byte-sniffed uploads, the LIKE
 // reference scan); the `media` table + bindings (MEDIA, MEDIA_URL) are the
@@ -96,13 +97,65 @@ export function mediaRoute<Env extends MediaRouteEnv = MediaRouteEnv>(
       });
       if (!put.ok) return json({ error: put.error }, put.status);
       // Register the asset. uploaded_at is unix seconds to match Drizzle's
-      // `integer({ mode: "timestamp" })` reads on the same column.
+      // `integer({ mode: "timestamp" })` reads on the same column. width/height
+      // are recorded when the header could be read (else NULL — "when known").
       await env.DB.prepare(
-        `INSERT INTO ${ident(name)} ("key","content_type","size","uploaded_at") VALUES (?1,?2,?3,?4)`,
+        `INSERT INTO ${ident(name)} ("key","content_type","size","width","height","uploaded_at") VALUES (?1,?2,?3,?4,?5,?6)`,
       )
-        .bind(put.key, put.contentType, put.size, Math.floor(Date.now() / 1000))
+        .bind(
+          put.key,
+          put.contentType,
+          put.size,
+          put.width,
+          put.height,
+          Math.floor(Date.now() / 1000),
+        )
         .run();
-      return json({ ok: true, key: put.key, url: mediaUrl(env.MEDIA_URL, put.key) }, 201);
+      return json(
+        {
+          ok: true,
+          key: put.key,
+          url: mediaUrl(env.MEDIA_URL, put.key),
+          width: put.width,
+          height: put.height,
+        },
+        201,
+      );
+    }
+
+    if (method === "PATCH") {
+      const g = await guardEditor(request, env, config.resolveEditor, true);
+      if ("response" in g) return g.response;
+      const body = (await request.json().catch(() => null)) as {
+        key?: unknown;
+        alt?: unknown;
+        caption?: unknown;
+      } | null;
+      const key = typeof body?.key === "string" ? body.key : "";
+      if (!key) return json({ error: "No key" }, 400);
+      // Only alt/caption are editable here; both are optional text (empty string
+      // clears, undefined leaves unchanged). Nothing else on the row is writable.
+      const alt = body?.alt === undefined ? undefined : String(body.alt ?? "");
+      const caption = body?.caption === undefined ? undefined : String(body.caption ?? "");
+      const sets: string[] = [];
+      const binds: (string | null)[] = [];
+      if (alt !== undefined) {
+        binds.push(alt);
+        sets.push(`"alt" = ?${binds.length}`);
+      }
+      if (caption !== undefined) {
+        binds.push(caption);
+        sets.push(`"caption" = ?${binds.length}`);
+      }
+      if (sets.length === 0) return json({ error: "Nothing to update" }, 400);
+      binds.push(key);
+      const { meta } = await env.DB.prepare(
+        `UPDATE ${ident(name)} SET ${sets.join(", ")} WHERE "key" = ?${binds.length}`,
+      )
+        .bind(...binds)
+        .run();
+      if (!meta.changes) return json({ error: "Not found" }, 404);
+      return json({ ok: true });
     }
 
     if (method === "DELETE") {

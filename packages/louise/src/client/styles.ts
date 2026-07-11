@@ -444,6 +444,17 @@ const CSS = `
   padding: 6px 10px;
   font-size: 12px;
 }
+/* Asset-level alt shown under the filename (truncated) so the library reads as
+   a real, described set of assets rather than a wall of filenames. */
+.louise-media-alt {
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Inline alt/caption editor revealed by the card's Alt button. */
+.louise-media-edit { display: flex; flex-direction: column; gap: 6px; padding: 4px 10px 8px; }
+.louise-media-edit .louise-input { width: 100%; font-size: 12px; }
 
 /* ── Settings panel ───────────────────────────────────────────── */
 .louise-settings-group { margin-bottom: 26px; }

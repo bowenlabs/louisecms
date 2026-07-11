@@ -7,6 +7,8 @@
 // In edit mode it also threads each section's array index (`_editIndex`) and the
 // edit flag (`_editMode`) into the component, so the bespoke markup can stamp
 // `data-louise-sfield` markers the client turns into in-place editors.
+import { env } from "cloudflare:workers";
+import { mediaMetaByUrl } from "louisecms/media";
 import Banner from "../sections/Banner.astro";
 import FeatureGrid from "../sections/FeatureGrid.astro";
 import Hero from "../sections/Hero.astro";
@@ -24,11 +26,31 @@ const COMPONENTS = {
   testimonial: Testimonial,
   media: Media,
 } as const;
+
+// Asset-level alt fallback (#16): on the PUBLIC render, fill a media section's
+// alt from its asset's registry default when no per-usage alt is set, so an
+// uploaded image is still described. Skipped in edit mode so the dock keeps
+// showing the true per-usage value (empty until the editor sets it). One small
+// query, and only when a media section actually needs it.
+const needsAlt =
+  !editMode &&
+  sections.some((s) => s._type === "media" && !s.alt && typeof s.image === "string" && s.image);
+const mediaMeta = needsAlt
+  ? await mediaMetaByUrl(env.DB, "media", env.MEDIA_URL ?? "/media")
+  : null;
+const withAssetAlt = (s: Item): Item => {
+  if (mediaMeta && s._type === "media" && !s.alt && typeof s.image === "string") {
+    const alt = mediaMeta.get(s.image)?.alt;
+    if (alt) return { ...s, alt };
+  }
+  return s;
+};
 ---
 
 {
   sections.map((s, i) => {
-    const Comp = s._type ? COMPONENTS[s._type as keyof typeof COMPONENTS] : undefined;
-    return Comp ? <Comp {...s} _editIndex={i} _editMode={editMode} /> : null;
+    const r = withAssetAlt(s);
+    const Comp = r._type ? COMPONENTS[r._type as keyof typeof COMPONENTS] : undefined;
+    return Comp ? <Comp {...r} _editIndex={i} _editMode={editMode} /> : null;
   })
 }

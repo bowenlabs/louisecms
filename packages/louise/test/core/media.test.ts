@@ -5,6 +5,7 @@ import {
   cropStyle,
   deleteMedia,
   findMediaReferences,
+  imageDimensions,
   isMediaUrl,
   likePattern,
   listMedia,
@@ -115,6 +116,61 @@ describe("sniffImageType", () => {
   });
 });
 
+// --- imageDimensions -------------------------------------------------------
+
+describe("imageDimensions", () => {
+  it("reads PNG width/height from IHDR (big-endian u32 at 16/20)", () => {
+    const png = new Uint8Array(24);
+    png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+    png.set([0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52], 8); // length + "IHDR"
+    png.set([0x00, 0x00, 0x03, 0x20], 16); // width 800
+    png.set([0x00, 0x00, 0x02, 0x58], 20); // height 600
+    expect(imageDimensions(png)).toEqual({ width: 800, height: 600 });
+  });
+
+  it("reads GIF logical-screen size (little-endian u16 at 6/8)", () => {
+    const gif = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x80, 0x02, 0xe0, 0x01]); // "GIF89a" + 640×480
+    expect(imageDimensions(gif)).toEqual({ width: 640, height: 480 });
+  });
+
+  it("reads a JPEG SOF0 frame size, skipping earlier segments", () => {
+    const jpeg = new Uint8Array(24);
+    jpeg.set([0xff, 0xd8], 0); // SOI
+    jpeg.set([0xff, 0xe0, 0x00, 0x04, 0x00, 0x00], 2); // APP0, length 4 (skipped)
+    jpeg.set([0xff, 0xc0, 0x00, 0x11, 0x08], 8); // SOF0, len, precision
+    jpeg.set([0x01, 0x2c], 13); // height 300
+    jpeg.set([0x02, 0x1c], 15); // width 540
+    expect(imageDimensions(jpeg)).toEqual({ width: 540, height: 300 });
+  });
+
+  it("reads WebP VP8 (lossy) and VP8X (extended) canvas sizes", () => {
+    const vp8 = new Uint8Array(30);
+    vp8.set([0x52, 0x49, 0x46, 0x46], 0); // RIFF
+    vp8.set([0x57, 0x45, 0x42, 0x50], 8); // WEBP
+    vp8.set([0x56, 0x50, 0x38, 0x20], 12); // "VP8 "
+    vp8.set([0x9d, 0x01, 0x2a], 23); // keyframe start code
+    vp8.set([0x40, 0x01], 26); // width 320 (14-bit LE)
+    vp8.set([0xf0, 0x00], 28); // height 240
+    expect(imageDimensions(vp8)).toEqual({ width: 320, height: 240 });
+
+    const vp8x = new Uint8Array(30);
+    vp8x.set([0x52, 0x49, 0x46, 0x46], 0);
+    vp8x.set([0x57, 0x45, 0x42, 0x50], 8);
+    vp8x.set([0x56, 0x50, 0x38, 0x58], 12); // "VP8X"
+    vp8x.set([0xaf, 0x04, 0x00], 24); // width-1 = 1199 → 1200
+    vp8x.set([0x75, 0x02, 0x00], 27); // height-1 = 629 → 630
+    expect(imageDimensions(vp8x)).toEqual({ width: 1200, height: 630 });
+  });
+
+  it("returns null for unreadable/unsupported headers", () => {
+    expect(imageDimensions(new Uint8Array([1, 2, 3, 4]))).toBeNull(); // garbage
+    // All-zero PNG body → 0×0, treated as unknown rather than a bogus size.
+    const zeroPng = new Uint8Array(24);
+    zeroPng.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+    expect(imageDimensions(zeroPng)).toBeNull();
+  });
+});
+
 // --- putMedia --------------------------------------------------------------
 
 describe("putMedia", () => {
@@ -127,6 +183,9 @@ describe("putMedia", () => {
     if (!res.ok) return;
     expect(res.contentType).toBe("image/png"); // sniffed, NOT the client "image/webp"
     expect(res.key).toMatch(/^web\/\d+-photo--1-\.png$/); // spaces + parens → "-"
+    // The synthetic PNG header has no real dimensions → recorded as unknown.
+    expect(res.width).toBeNull();
+    expect(res.height).toBeNull();
     const stored = store.get(res.key)!;
     expect(stored.contentType).toBe("image/png");
     expect(stored.cacheControl).toContain("immutable");
