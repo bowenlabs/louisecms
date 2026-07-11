@@ -8,7 +8,11 @@
 // Field validation reuses the shared `Rule`/`validateValue` engine
 // (`louisecms/cms`) — there is one validation definition, run on both sides.
 
-import type { SQLiteColumn, SQLiteTableWithColumns } from "drizzle-orm/sqlite-core";
+import type {
+  SQLiteColumn,
+  SQLiteColumnBuilderBase,
+  SQLiteTableWithColumns,
+} from "drizzle-orm/sqlite-core";
 import type { ValidationBuilder } from "../cms/validation.js";
 
 /**
@@ -122,8 +126,9 @@ export type FormColumns = Record<string, SQLiteColumn>;
  * uses to render the submissions list.
  */
 export interface FormDefinition extends FormConfig {
-  /** Derived Drizzle columns (spread into a table, or use {@link table}). */
-  columns: Record<string, unknown>;
+  /** Derived Drizzle column builders — spread into your own
+   *  `sqliteTable(name, { ...columns, /* extras *​/ })`, or use {@link table}. */
+  columns: Record<string, SQLiteColumnBuilderBase>;
   /** The ready-made Drizzle table for this form. */
   table: AnyFormTable;
   /** Field key → review column (label + type) for the submissions panel. */

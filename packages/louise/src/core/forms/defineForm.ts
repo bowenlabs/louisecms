@@ -32,7 +32,7 @@ export function defineForm(config: FormConfig): FormDefinition {
     );
   }
   const columns = deriveFormColumns(config.fields);
-  const table = sqliteTable(config.name, columns as Record<string, never>);
+  const table = sqliteTable(config.name, columns);
   const reviewColumns: FormReviewColumn[] = Object.entries(config.fields).map(([key, field]) => ({
     key,
     label: field.label,
