@@ -88,7 +88,14 @@ export function cfImageSrcset(
   url: string,
   opts: CfImageSrcsetOptions,
 ): { src: string; srcset: string } {
-  const { width, ratio, steps = [0.5, 0.75, 1, 1.5, 2], fit = "cover", gravity = "auto", quality = 82 } = opts;
+  const {
+    width,
+    ratio,
+    steps = [0.5, 0.75, 1, 1.5, 2],
+    fit = "cover",
+    gravity = "auto",
+    quality = 82,
+  } = opts;
   const [rw, rh] = ratio ? ratio.split("/").map((n) => Number.parseFloat(n.trim())) : [];
   const heightFor = (w: number) => (rw && rh ? Math.round((w * rh) / rw) : undefined);
   const at = (w: number) =>
