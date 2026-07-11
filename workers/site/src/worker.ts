@@ -19,6 +19,7 @@ import {
 } from "louisecms/browser";
 import {
   DEFAULT_PAGE_FIELDS,
+  formRoute,
   inquiriesRoute,
   mediaRoute,
   pagesRoute,
@@ -29,6 +30,7 @@ import {
   versionsRoute,
 } from "louisecms/editor";
 import { assertValidSections } from "louisecms/cms";
+import { inquiriesForm } from "louisecms/db";
 import { composeWorker, type WorkerRoute } from "louisecms/worker";
 import { resolveEditorFromCookie } from "./lib/louise/session.js";
 import { pagesCollection } from "./pages-collection.js";
@@ -224,6 +226,9 @@ const editorRoutes: WorkerRoute<WorkerEnv>[] = [
       { collection: "pages", table: "pages", columns: ["body"], labelColumn: "title" },
     ],
   }),
+  // Public capture (contact form) + editor-gated review, both from the one
+  // built-in `inquiries` form (louisecms/forms) — #46.
+  formRoute({ form: inquiriesForm, rateLimitKv: (env) => env.RL }),
   inquiriesRoute({ table: inquiries, resolveEditor }),
   seedRoute({ table: siteSettings, resolveEditor, defaults: { siteName: "Louise dogfood" } }),
 ];

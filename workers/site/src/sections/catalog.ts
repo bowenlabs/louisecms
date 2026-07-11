@@ -74,4 +74,14 @@ export const SECTIONS: SectionCatalog = {
       caption: { type: "text", label: "Caption", placeholder: "Add a caption" },
     },
   },
+  // Contact form — only the surrounding copy is section-edited; the inputs come
+  // from the built-in `inquiries` form (louisecms/forms), which owns validation.
+  contact: {
+    label: "Contact form",
+    icon: "ph ph-envelope",
+    fields: {
+      heading: { type: "text", label: "Heading", placeholder: "Section heading" },
+      blurb: { type: "textarea", label: "Blurb", placeholder: "Supporting text" },
+    },
+  },
 };

@@ -15,6 +15,7 @@ import {
   searchRoute,
   mediaRoute,
   listMediaRoute,
+  formRoute,
   inquiriesRoute,
   seedRoute,
   runEditorRoute,
@@ -125,6 +126,7 @@ export const ALL: APIRoute = (ctx) =>
 | `settingsRoute`     | `/api/louise/settings`               | GET · POST/PATCH (structured base + `custom`)                 |
 | `blobSettingsRoute` | `/api/louise/settings`               | GET · POST/PATCH — single-JSON-blob variant                   |
 | `saveRoute`         | `/api/louise/save`                   | POST (inline field save)                                      |
+| `formRoute`         | `/api/louise/forms/<name>`           | **public** POST capture (same-origin + spam guard)            |
 | `inquiriesRoute`    | `/api/louise/inquiries`              | GET list · DELETE one                                         |
 | `seedRoute`         | `/api/louise/seed`                   | seeds the `site_settings` singleton (idempotent)              |
 
@@ -158,6 +160,12 @@ resolveEditor, validate? }`; **mount it before `pagesRoute`** so its
   `listMedia`, and POST reads an allowlisted upload `scope` from the form
   (`scopes`, first is the default) rather than a fixed one. Same `MediaRouteEnv`
   (delete-safety still scans D1 content tables).
+- **`formRoute`** — the **public** capture companion to `inquiriesRoute`, built
+  from a [`defineForm`](/guide/forms/) definition. POST only, **same-origin-guarded
+  but not session-gated** (anyone may submit): validates + coerces against the
+  form's fields (`422` with per-field `violations`), enforces the declared spam
+  guard (KV rate limit via `rateLimitKv`, Turnstile via `turnstileSecret`), and
+  inserts the row. Mounted at `/api/louise/forms/<name>`.
 - **`settingsRoute`** — GET/PATCH the `site_settings` singleton. **Extensible,
   not a closed set:** it patches an allowlisted structured base (`columns`, the
   framework [`siteSettingsColumns`](/reference/db/)) and merges site-declared

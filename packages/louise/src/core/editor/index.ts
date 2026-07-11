@@ -17,6 +17,7 @@ export {
   tableMeta,
 } from "./shared.js";
 export { type EditorsRouteConfig, editorsRoute } from "./editors.js";
+export { type FormRouteConfig, type FormRouteEnv, formRoute } from "./form.js";
 export { inquiriesRoute, type InquiriesRouteConfig } from "./inquiries.js";
 export {
   partitionSettingsPatch,

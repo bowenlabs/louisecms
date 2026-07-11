@@ -10,6 +10,7 @@
 import { env } from "cloudflare:workers";
 import { mediaMetaByUrl } from "louisecms/media";
 import Banner from "../sections/Banner.astro";
+import Contact from "../sections/Contact.astro";
 import FeatureGrid from "../sections/FeatureGrid.astro";
 import Hero from "../sections/Hero.astro";
 import Media from "../sections/Media.astro";
@@ -25,6 +26,7 @@ const COMPONENTS = {
   banner: Banner,
   testimonial: Testimonial,
   media: Media,
+  contact: Contact,
 } as const;
 
 // Asset-level alt fallback (#16): on the PUBLIC render, fill a media section's
