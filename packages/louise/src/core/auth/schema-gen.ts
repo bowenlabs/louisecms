@@ -48,7 +48,7 @@ export function authSchemaOptions(config: AuthSchemaConfig): BetterAuthOptions {
     ...(config.customers ? { emailAndPassword: { enabled: true } } : {}),
     // Louise's standard first/last name fields, ahead of the site's own extras —
     // mirrors auth.ts so the generated schema matches the runtime user table.
-    user: { additionalFields: { ...LOUISE_USER_FIELDS, ...(config.additionalFields ?? {}) } },
+    user: { additionalFields: { ...LOUISE_USER_FIELDS, ...config.additionalFields } },
     plugins: [magicLink({ sendMagicLink: async () => {} }), admin(), passkey()],
   };
 }

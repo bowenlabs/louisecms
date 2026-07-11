@@ -181,7 +181,10 @@ describe("resolveSession (generic, ungated)", () => {
 
   it("returns any signed-in user with their role (no role gate)", async () => {
     expect(
-      await resolveSession(authWith({ id: "u1", email: "c@x.com", name: "C", role: "customer" }), req),
+      await resolveSession(
+        authWith({ id: "u1", email: "c@x.com", name: "C", role: "customer" }),
+        req,
+      ),
     ).toEqual({ userId: "u1", email: "c@x.com", name: "C", role: "customer" });
   });
 

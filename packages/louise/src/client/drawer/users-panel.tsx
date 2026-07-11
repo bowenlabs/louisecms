@@ -70,8 +70,7 @@ export function UsersPanel(props: UsersPanelProps) {
   const editors = () => editorsQ.data ?? [];
   const label = (e: EditorRow) =>
     [e.firstName, e.lastName].filter(Boolean).join(" ") || e.name || e.email;
-  const canAdd = () =>
-    !!firstName().trim() && !!lastName().trim() && EMAIL_RE.test(email().trim());
+  const canAdd = () => !!firstName().trim() && !!lastName().trim() && EMAIL_RE.test(email().trim());
 
   return (
     <div class="louise-form">

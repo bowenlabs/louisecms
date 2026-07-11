@@ -82,9 +82,11 @@ export function editorsRoute<Env extends EditorRouteEnv = EditorRouteEnv>(
     if (request.method === "POST") {
       const g = await guardEditor(request, env, config.resolveEditor, true);
       if ("response" in g) return g.response;
-      const body = (await request.json().catch(() => null)) as
-        | { firstName?: unknown; lastName?: unknown; email?: unknown }
-        | null;
+      const body = (await request.json().catch(() => null)) as {
+        firstName?: unknown;
+        lastName?: unknown;
+        email?: unknown;
+      } | null;
       const firstName = typeof body?.firstName === "string" ? body.firstName.trim() : "";
       const lastName = typeof body?.lastName === "string" ? body.lastName.trim() : "";
       const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
@@ -119,7 +121,9 @@ export function editorsRoute<Env extends EditorRouteEnv = EditorRouteEnv>(
       const id = new URL(request.url).searchParams.get("id");
       if (!id) return json({ error: "Missing editor id." }, 400);
       // Never orphan the studio — refuse to remove the last editor.
-      const count = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first<{ n: number }>();
+      const count = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first<{
+        n: number;
+      }>();
       if ((count?.n ?? 0) <= 1) {
         return json({ error: "You can't remove the last editor." }, 400);
       }

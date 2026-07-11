@@ -514,7 +514,11 @@ describe("pagesRoute (guard + dispatch)", () => {
 
   it("422s a create whose slug is reserved, before any DB write", async () => {
     const { db, calls } = makeD1(() => []);
-    const route = pagesRoute({ table: pages, resolveEditor: () => editor, reservedSlugs: ["login"] });
+    const route = pagesRoute({
+      table: pages,
+      resolveEditor: () => editor,
+      reservedSlugs: ["login"],
+    });
     const res = await route(
       new Request(base, {
         method: "POST",

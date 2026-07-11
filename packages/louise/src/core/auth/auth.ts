@@ -133,7 +133,7 @@ export async function getLouiseAuth(
   const userOptions = {
     ...(prefix ? { modelName: `${prefix}user` } : {}),
     // Louise's standard first/last name fields, ahead of the site's own extras.
-    additionalFields: { ...LOUISE_USER_FIELDS, ...(config.additionalFields ?? {}) },
+    additionalFields: { ...LOUISE_USER_FIELDS, ...config.additionalFields },
   };
 
   return betterAuth({
