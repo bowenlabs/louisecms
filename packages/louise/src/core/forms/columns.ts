@@ -5,7 +5,7 @@
 // small: text-like inputs → text, checkbox → boolean integer, number → real,
 // plus the framework `id` primary key and a `created_at` timestamp.
 
-import { integer, real, text } from "drizzle-orm/sqlite-core";
+import { integer, real, text, type SQLiteColumnBuilderBase } from "drizzle-orm/sqlite-core";
 import type { FormField } from "./types.js";
 
 /** camelCase field key → snake_case column name (matches the framework tables:
@@ -39,8 +39,10 @@ function fieldColumn(key: string, field: FormField) {
  * is spread into `sqliteTable(name, columns)` — identical in shape to the
  * hand-authored framework tables, so drizzle-kit generates a normal migration.
  */
-export function deriveFormColumns(fields: Record<string, FormField>): Record<string, unknown> {
-  const columns: Record<string, unknown> = {
+export function deriveFormColumns(
+  fields: Record<string, FormField>,
+): Record<string, SQLiteColumnBuilderBase> {
+  const columns: Record<string, SQLiteColumnBuilderBase> = {
     id: integer("id").primaryKey({ autoIncrement: true }),
   };
   for (const [key, field] of Object.entries(fields)) {
