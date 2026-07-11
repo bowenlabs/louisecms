@@ -41,6 +41,11 @@ export function Form(props: FormProps): JSX.Element {
   const [status, setStatus] = createSignal<Status>("idle");
   const [message, setMessage] = createSignal("");
   const [uploading, setUploading] = createSignal<string | null>(null);
+  // Anti-spam telemetry (Tier 3): when the form mounted, and the honeypot value.
+  // Both ride along in the POST body; the server's `looksLikeSpam` reads them.
+  const mountedAt = Date.now();
+  const honeypot = () => props.form.spam?.honeypot;
+  const [honeypotValue, setHoneypotValue] = createSignal("");
 
   const action = () => props.action ?? `/api/louise/forms/${props.form.name}`;
 
@@ -91,10 +96,12 @@ export function Form(props: FormProps): JSX.Element {
       return;
     }
     try {
+      const payload: Record<string, unknown> = { ...values, louise_ts: mountedAt };
+      if (honeypot()) payload[honeypot() as string] = honeypotValue();
       const res = await fetch(action(), {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(values),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         setValues({});
@@ -143,6 +150,19 @@ export function Form(props: FormProps): JSX.Element {
           />
         )}
       </For>
+      <Show when={honeypot()}>
+        {/* Honeypot: off-screen + hidden from AT/autofill; a human never fills it. */}
+        <div aria-hidden="true" style={{ position: "absolute", left: "-9999px" }}>
+          <input
+            type="text"
+            name={honeypot()}
+            tabindex="-1"
+            autocomplete="off"
+            value={honeypotValue()}
+            onInput={(e) => setHoneypotValue(e.currentTarget.value)}
+          />
+        </div>
+      </Show>
       <button class="louise-form-submit" type="submit" disabled={status() === "submitting"}>
         {status() === "submitting" ? "Sending…" : (props.form.submitLabel ?? "Send")}
       </button>

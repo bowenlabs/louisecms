@@ -31,6 +31,7 @@ import {
 } from "louisecms/editor";
 import { assertValidSections } from "louisecms/cms";
 import { inquiriesForm } from "louisecms/db";
+import { defineForm } from "louisecms/forms";
 import { composeWorker, type WorkerRoute } from "louisecms/worker";
 import { resolveEditorFromCookie } from "./lib/louise/session.js";
 import { pagesCollection } from "./pages-collection.js";
@@ -158,6 +159,15 @@ const SETTINGS_COLUMNS = [
   "disableIndexing",
 ];
 
+// The public contact form: the built-in inquiries fields + Tier-3 silent spam
+// heuristics (a `website` honeypot + a 2s minimum since render). Same `inquiries`
+// table, so the drawer's Inquiries tab reviews it unchanged.
+const contactForm = defineForm({
+  name: "inquiries",
+  fields: inquiriesForm.fields,
+  spam: { honeypot: "website", minSeconds: 2 },
+});
+
 const editorRoutes: WorkerRoute<WorkerEnv>[] = [
   // Draft/publish + version history for pages: /api/louise/pages/:id/{versions,
   // publish,unpublish}. Saves stage drafts (live row untouched); publish promotes
@@ -227,8 +237,9 @@ const editorRoutes: WorkerRoute<WorkerEnv>[] = [
     ],
   }),
   // Public capture (contact form) + editor-gated review, both from the one
-  // built-in `inquiries` form (louisecms/forms) — #46.
-  formRoute({ form: inquiriesForm, rateLimitKv: (env) => env.RL }),
+  // built-in `inquiries` form (louisecms/forms) — #46. The dogfood adds the
+  // Tier-3 silent heuristics (honeypot + a 2s minimum) on top of the base fields.
+  formRoute({ form: contactForm, rateLimitKv: (env) => env.RL }),
   inquiriesRoute({ table: inquiries, resolveEditor }),
   seedRoute({ table: siteSettings, resolveEditor, defaults: { siteName: "Louise dogfood" } }),
 ];

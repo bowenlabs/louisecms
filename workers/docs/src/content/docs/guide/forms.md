@@ -124,8 +124,8 @@ capture **and** review with no extra wiring.
 
 ## Spam
 
-Both guards are opt-in per form and enforced only when `formRoute` is given the
-matching binding:
+All guards are opt-in per form. The visible ones are enforced only when
+`formRoute` is given the matching binding:
 
 - **Rate limit** — a KV fixed-window limiter (reuses
   [`security/rate-limit`](/reference/security/)), keyed by `CF-Connecting-IP` by
@@ -134,3 +134,46 @@ matching binding:
   `cf-turnstile-response` field. Fails closed. See the
   [turnstile setup path](https://developers.cloudflare.com/turnstile/) for the
   widget.
+
+Two **silent** heuristics reject a likely bot with a *fake success* (so it can't
+tune) and never insert:
+
+- `spam.honeypot: "website"` — a decoy field a bot fills but a human never sees.
+  The `<Form>` helper emits it hidden + `autocomplete="off"`.
+- `spam.minSeconds: 2` — a minimum time between render and submit. The helper
+  stamps a `louise_ts` at mount; a plain HTML form that doesn't stamp one is not
+  penalized.
+
+## Notifications
+
+Declare where a submission is announced; `formRoute` fires them **off the response
+path** (`waitUntil`), so a slow webhook/mail never delays the visitor:
+
+```ts
+defineForm({
+  name: "inquiries",
+  fields: { /* … */ },
+  notify: { webhook: env.SLACK_WEBHOOK, email: { to: "hello@studio.com" } },
+});
+```
+
+`webhook` POSTs `{ form, values }`. `email` uses a **`mailer`** you pass to
+`formRoute` (wrap your `EMAIL` binding + `louisecms/email` templates), so Louise
+stays decoupled from any one mail transport. A notification failure never fails
+the submission.
+
+## A catalog of forms (no new table each time)
+
+A first-class form like `inquiries` gets its own typed table. For one-off forms —
+RSVP, waitlist, booking — write to the shared **`submissions`** table
+(`louisecms/db`) instead, so a new form needs **no migration**:
+
+```ts
+formRoute({ form: rsvp, genericTable: "submissions" });     // capture → { form, data }
+submissionsRoute({ form: "rsvp", resolveEditor });           // review that form's rows
+```
+
+`formRoute`'s `genericTable` stores each submission as `{ form, data }` (the
+values JSON-encoded); `submissionsRoute` lists/deletes one form's rows (parsing
+`data` back out) for a drawer review tab. Register a tab per catalog form and each
+gets capture, validation, and review with one shared table.
