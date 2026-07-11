@@ -25,3 +25,26 @@ export async function resolveEditorSession(
     role: user.role,
   };
 }
+
+/**
+ * Re-derive the signed-in user and their role WITHOUT gating on any specific
+ * role — for a site's own multi-role auth instance where the role is arbitrary
+ * and access is decided per route (via {@link requireRole}) or the UI renders
+ * per role. Returns null only when there is no session. Generic and
+ * unopinionated: Louise bakes in no role names. (The CMS studio uses the
+ * role-gating {@link resolveEditorSession}.)
+ */
+export async function resolveSession(
+  auth: LouiseAuth,
+  request: Request,
+): Promise<EditorSession | null> {
+  const result = await auth.api.getSession({ headers: request.headers });
+  const user = result?.user;
+  if (!user) return null;
+  return {
+    userId: user.id,
+    email: user.email ?? "",
+    name: user.name || user.email?.split("@")[0] || "User",
+    role: user.role ?? "",
+  };
+}
