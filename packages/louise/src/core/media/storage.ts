@@ -9,6 +9,7 @@
 // the *shape*, not the wiring. The HTTP route that guards these with an editor
 // session lives in the generic editor surface (louisecms/worker), not here.
 
+import { imageDimensions } from "./dimensions.js";
 import { sniffImageType } from "./sniff.js";
 
 /** Hard ceiling on a single upload. Without it the bucket streams whatever is
@@ -25,9 +26,17 @@ export interface PutMediaOptions {
 }
 
 /** Outcome of {@link putMedia}: either the stored object, or a rejection with
- *  the HTTP status a route handler should surface. */
+ *  the HTTP status a route handler should surface. `width`/`height` are the
+ *  intrinsic pixel dimensions when the header could be read, else `null`. */
 export type PutMediaResult =
-  | { ok: true; key: string; contentType: string; size: number }
+  | {
+      ok: true;
+      key: string;
+      contentType: string;
+      size: number;
+      width: number | null;
+      height: number | null;
+    }
   | { ok: false; status: 413 | 415; error: string };
 
 /** Lowercase a filename to a bucket-safe key segment. */
@@ -59,10 +68,15 @@ export async function putMedia(
     return { ok: false, status: 413, error: `File too large (max ${maxBytes / 1024 / 1024} MB)` };
   }
 
-  const contentType = sniffImageType(new Uint8Array(buffer, 0, Math.min(buffer.byteLength, 32)));
+  const head = new Uint8Array(buffer, 0, Math.min(buffer.byteLength, 32));
+  const contentType = sniffImageType(head);
   if (!contentType) {
     return { ok: false, status: 415, error: "Unsupported or invalid image file" };
   }
+
+  // Read intrinsic dimensions from the header (no pixel decode). A larger slice
+  // than the sniff needs, since a JPEG's SOF can sit past several segments.
+  const dims = imageDimensions(new Uint8Array(buffer, 0, Math.min(buffer.byteLength, 65536)));
 
   const scope = opts.scope ?? "web";
   const key = `${scope}/${Date.now()}-${safeName(file.name)}`;
@@ -73,7 +87,14 @@ export async function putMedia(
     },
   });
 
-  return { ok: true, key, contentType, size: buffer.byteLength };
+  return {
+    ok: true,
+    key,
+    contentType,
+    size: buffer.byteLength,
+    width: dims?.width ?? null,
+    height: dims?.height ?? null,
+  };
 }
 
 export interface MediaItem {
@@ -131,6 +152,50 @@ export async function listMedia(bucket: R2Bucket, base: string): Promise<MediaIt
  *  caller's decision — run {@link findMediaReferences} first when appropriate. */
 export async function deleteMedia(bucket: R2Bucket, key: string): Promise<void> {
   await bucket.delete(key);
+}
+
+/** Asset-level metadata for a media row, keyed for render-time lookup. */
+export interface MediaMeta {
+  key: string;
+  url: string;
+  alt: string | null;
+  caption: string | null;
+  width: number | null;
+  height: number | null;
+}
+
+/**
+ * Load asset-level metadata (alt/caption/dimensions) from the `media` registry,
+ * keyed by public URL, so a render pass can fill an image's `alt` from its asset
+ * default when a per-usage override isn't set. One query over the small registry
+ * table; `tableName` is the site's `media` table name, `base` its `MEDIA_URL`.
+ */
+export async function mediaMetaByUrl(
+  db: D1Database,
+  tableName: string,
+  base: string,
+): Promise<Map<string, MediaMeta>> {
+  const stmt = `SELECT "key","alt","caption","width","height" FROM ${ident(tableName)}`;
+  const { results } = await db.prepare(stmt).all<{
+    key: string;
+    alt: string | null;
+    caption: string | null;
+    width: number | null;
+    height: number | null;
+  }>();
+  const map = new Map<string, MediaMeta>();
+  for (const row of results) {
+    const url = mediaUrl(base, row.key);
+    map.set(url, {
+      key: row.key,
+      url,
+      alt: row.alt,
+      caption: row.caption,
+      width: row.width,
+      height: row.height,
+    });
+  }
+  return map;
 }
 
 export interface MediaReference {

@@ -120,7 +120,7 @@ export const ALL: APIRoute = (ctx) =>
 | `pagesRoute`        | `/api/louise/pages` (+ `/:id`)       | GET list · POST create · GET/PATCH/DELETE one                 |
 | `versionsRoute`     | `/api/louise/pages/:id/…`            | GET/POST `versions` · POST `publish` · POST `unpublish`       |
 | `searchRoute`       | `/api/louise/pages/{search,reindex}` | GET `search?q=` · POST `reindex`                              |
-| `mediaRoute`        | `/api/louise/media`                  | GET list · POST upload · DELETE (reference-scanned)           |
+| `mediaRoute`        | `/api/louise/media`                  | GET list · POST upload · PATCH alt/caption · DELETE (reference-scanned) |
 | `listMediaRoute`    | `/api/louise/media`                  | registry-less variant: lists R2 directly, per-request `scope` |
 | `settingsRoute`     | `/api/louise/settings`               | GET · POST/PATCH (structured base + `custom`)                 |
 | `blobSettingsRoute` | `/api/louise/settings`               | GET · POST/PATCH — single-JSON-blob variant                   |
@@ -148,7 +148,9 @@ resolveEditor, validate? }`; **mount it before `pagesRoute`** so its
   `search.fields` is indexed by flattening every string leaf, so structured
   `sections` content is searchable. Also **mount before `pagesRoute`**.
 - **`mediaRoute`** — wraps [`louisecms/media`](/guide/media/): magic-byte-
-  sniffed uploads, the registry list, and a delete-safety reference scan (a
+  sniffed uploads (recording intrinsic `width`/`height`), the registry list,
+  `PATCH` to set an asset's [`alt`/`caption`](/guide/media/#asset-level-alt-caption-and-dimensions)
+  (only those two columns are writable), and a delete-safety reference scan (a
   `409 in_use` unless `?force=1`). Its env widens `EditorRouteEnv` with the R2
   bindings (`MediaRouteEnv`: `MEDIA`, `MEDIA_URL`).
 - **`listMediaRoute`** — the same GET/POST/DELETE contract as `mediaRoute` but

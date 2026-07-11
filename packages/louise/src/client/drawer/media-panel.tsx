@@ -17,6 +17,12 @@ export interface MediaItem {
   content_type?: string;
   size?: number;
   url: string;
+  /** Asset-level accessibility description (the default reused wherever the
+   *  asset appears). Editable in the panel; NULL until set. */
+  alt?: string | null;
+  caption?: string | null;
+  width?: number | null;
+  height?: number | null;
 }
 
 /** A content record still referencing an asset (from the DELETE 409 body). */
@@ -140,34 +146,146 @@ export function MediaPanel() {
           <div class="louise-media-grid">
             <For each={items()}>
               {(m) => (
-                <div class="louise-media-card">
-                  <div class="louise-media-thumb">
-                    <img src={m.url} alt={m.key} loading="lazy" />
-                  </div>
-                  <div class="louise-media-meta">
-                    <div class="louise-item-title">{m.key.split("/").pop()}</div>
-                    <div class="louise-item-sub">{fmtSize(m.size)}</div>
-                  </div>
-                  <div class="louise-media-actions">
-                    <button class="louise-btn" type="button" onClick={() => void copy(m.url)}>
-                      {copied() === m.url ? "Copied" : "Copy URL"}
-                    </button>
-                    <button
-                      class="louise-icon-btn"
-                      type="button"
-                      aria-label="Delete"
-                      disabled={deleteMutation.isPending}
-                      onClick={() => del(m.key)}
-                    >
-                      <Icon name="trash" />
-                    </button>
-                  </div>
-                </div>
+                <MediaCard
+                  item={m}
+                  copied={copied() === m.url}
+                  deleting={deleteMutation.isPending}
+                  onCopy={() => void copy(m.url)}
+                  onDelete={() => del(m.key)}
+                  onSaved={() => qc.invalidateQueries({ queryKey: louiseQueryKeys.media })}
+                  onError={setError}
+                />
               )}
             </For>
           </div>
         </Show>
       </Show>
     </>
+  );
+}
+
+/**
+ * One asset card: thumbnail (with its real alt), filename/size/dimensions, and
+ * an inline editor for the asset-level `alt`/`caption` — the accessibility
+ * description reused wherever the asset is placed. Saving PATCHes the `media`
+ * route and refreshes the list.
+ */
+function MediaCard(props: {
+  item: MediaItem;
+  copied: boolean;
+  deleting: boolean;
+  onCopy: () => void;
+  onDelete: () => void;
+  onSaved: () => void;
+  onError: (msg: string) => void;
+}) {
+  const [editing, setEditing] = createSignal(false);
+  const [alt, setAlt] = createSignal(props.item.alt ?? "");
+  const [caption, setCaption] = createSignal(props.item.caption ?? "");
+  const [saving, setSaving] = createSignal(false);
+
+  const dims = () =>
+    props.item.width && props.item.height ? `${props.item.width}×${props.item.height}` : "";
+
+  const startEdit = () => {
+    setAlt(props.item.alt ?? "");
+    setCaption(props.item.caption ?? "");
+    setEditing(true);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/louise/media", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: props.item.key, alt: alt(), caption: caption() }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        props.onError(body.error || `Save failed (${res.status})`);
+        return;
+      }
+      setEditing(false);
+      props.onSaved();
+    } catch (err) {
+      props.onError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div class="louise-media-card">
+      <div class="louise-media-thumb">
+        <img src={props.item.url} alt={props.item.alt || props.item.key} loading="lazy" />
+      </div>
+      <div class="louise-media-meta">
+        <div class="louise-item-title">{props.item.key.split("/").pop()}</div>
+        <div class="louise-item-sub">
+          {[fmtSize(props.item.size), dims()].filter(Boolean).join(" · ")}
+        </div>
+        <Show when={!editing() && props.item.alt}>
+          <div class="louise-item-sub louise-media-alt" title={props.item.alt ?? ""}>
+            {props.item.alt}
+          </div>
+        </Show>
+      </div>
+      <Show when={editing()}>
+        <div class="louise-media-edit">
+          <input
+            class="louise-input"
+            type="text"
+            placeholder="Alt text (describe the image)"
+            value={alt()}
+            onInput={(e) => setAlt(e.currentTarget.value)}
+          />
+          <input
+            class="louise-input"
+            type="text"
+            placeholder="Caption (optional)"
+            value={caption()}
+            onInput={(e) => setCaption(e.currentTarget.value)}
+          />
+          <div class="louise-media-actions">
+            <button
+              class="louise-btn louise-btn-primary"
+              type="button"
+              disabled={saving()}
+              onClick={() => void save()}
+            >
+              {saving() ? "Saving…" : "Save"}
+            </button>
+            <button
+              class="louise-btn"
+              type="button"
+              disabled={saving()}
+              onClick={() => setEditing(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Show>
+      <Show when={!editing()}>
+        <div class="louise-media-actions">
+          <button class="louise-btn" type="button" onClick={props.onCopy}>
+            {props.copied ? "Copied" : "Copy URL"}
+          </button>
+          <button class="louise-btn" type="button" aria-label="Edit alt text" onClick={startEdit}>
+            <Icon name="pencil" /> Alt
+          </button>
+          <button
+            class="louise-icon-btn"
+            type="button"
+            aria-label="Delete"
+            disabled={props.deleting}
+            onClick={props.onDelete}
+          >
+            <Icon name="trash" />
+          </button>
+        </div>
+      </Show>
+    </div>
   );
 }

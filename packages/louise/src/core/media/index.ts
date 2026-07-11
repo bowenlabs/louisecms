@@ -8,6 +8,7 @@
 // `louisecms/db` (`mediaColumns` / `media`). Bindings contract: `MEDIA` (R2) +
 // `MEDIA_URL` — see {@link LouiseMediaEnv}.
 
+export { type ImageDimensions, imageDimensions } from "./dimensions.js";
 export { sniffImageType, type SniffedImageType } from "./sniff.js";
 export {
   DEFAULT_MAX_BYTES,
@@ -17,8 +18,10 @@ export {
   likePattern,
   listMedia,
   type MediaItem,
+  type MediaMeta,
   type MediaReference,
   type MediaRefSource,
+  mediaMetaByUrl,
   mediaUrl,
   putMedia,
   type PutMediaOptions,

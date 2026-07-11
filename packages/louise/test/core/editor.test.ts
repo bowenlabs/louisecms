@@ -34,7 +34,7 @@ function makeD1(handler: (sql: string, binds: unknown[]) => unknown[]) {
             },
             async run() {
               calls.push({ sql, binds });
-              return { success: true, meta: {} };
+              return { success: true, meta: { changes: 1 } };
             },
           };
         },
@@ -613,7 +613,7 @@ describe("mediaRoute", () => {
     expect(body.media[0]?.url).toBe("https://media.example.com/web/1.png");
   });
 
-  it("registers a verified upload and stores it", async () => {
+  it("registers a verified upload and stores it (with dimension columns)", async () => {
     const { db, calls } = makeD1(() => []);
     const { bucket, puts } = makeBucket();
     const fd = new FormData();
@@ -626,7 +626,84 @@ describe("mediaRoute", () => {
     const res = await mediaRoute(cfg())(req, { DB: db, MEDIA: bucket, MEDIA_URL }, ctx);
     expect(res?.status).toBe(201);
     expect(puts).toHaveLength(1);
-    expect(calls.some((c) => c.sql.startsWith("INSERT INTO"))).toBe(true);
+    const insert = calls.find((c) => c.sql.startsWith("INSERT INTO"));
+    expect(insert?.sql).toContain('"width","height"');
+  });
+
+  it("PATCHes an asset's alt/caption (and nothing else) by key", async () => {
+    const { db, calls } = makeD1(() => []);
+    const { bucket } = makeBucket();
+    const res = await mediaRoute(cfg())(
+      new Request(mediaBase, {
+        method: "PATCH",
+        headers: { origin: "https://site.example", "content-type": "application/json" },
+        body: JSON.stringify({ key: "web/1.png", alt: "A blue mug", caption: "On a windowsill" }),
+      }),
+      { DB: db, MEDIA: bucket, MEDIA_URL },
+      ctx,
+    );
+    expect(res?.status).toBe(200);
+    const update = calls.find((c) => c.sql.startsWith("UPDATE"));
+    expect(update?.sql).toContain('"alt" = ?1');
+    expect(update?.sql).toContain('"caption" = ?2');
+    // Only alt/caption + the key are ever bound — no other column is writable.
+    expect(update?.binds).toEqual(["A blue mug", "On a windowsill", "web/1.png"]);
+  });
+
+  it("rejects a PATCH with no key (400) before touching the DB", async () => {
+    const { db, calls } = makeD1(() => []);
+    const { bucket } = makeBucket();
+    const res = await mediaRoute(cfg())(
+      new Request(mediaBase, {
+        method: "PATCH",
+        headers: { origin: "https://site.example", "content-type": "application/json" },
+        body: JSON.stringify({ alt: "orphan" }),
+      }),
+      { DB: db, MEDIA: bucket, MEDIA_URL },
+      ctx,
+    );
+    expect(res?.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("403s a cross-origin PATCH (CSRF) before touching the DB", async () => {
+    const { db, calls } = makeD1(() => []);
+    const { bucket } = makeBucket();
+    const res = await mediaRoute(cfg())(
+      new Request(mediaBase, {
+        method: "PATCH",
+        headers: { origin: "https://evil.example", "content-type": "application/json" },
+        body: JSON.stringify({ key: "web/1.png", alt: "x" }),
+      }),
+      { DB: db, MEDIA: bucket, MEDIA_URL },
+      ctx,
+    );
+    expect(res?.status).toBe(403);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("404s a PATCH whose key matches no row", async () => {
+    // A DB whose UPDATE affects zero rows.
+    const db = {
+      prepare: () => ({
+        bind: () => ({
+          async run() {
+            return { success: true, meta: { changes: 0 } };
+          },
+        }),
+      }),
+    } as unknown as D1Database;
+    const { bucket } = makeBucket();
+    const res = await mediaRoute(cfg())(
+      new Request(mediaBase, {
+        method: "PATCH",
+        headers: { origin: "https://site.example", "content-type": "application/json" },
+        body: JSON.stringify({ key: "web/missing.png", alt: "x" }),
+      }),
+      { DB: db, MEDIA: bucket, MEDIA_URL },
+      ctx,
+    );
+    expect(res?.status).toBe(404);
   });
 
   it("blocks a delete when the key is referenced (409), unless forced", async () => {
@@ -668,7 +745,7 @@ describe("mediaRoute", () => {
     const { db } = makeD1(() => []);
     const { bucket } = makeBucket();
     const res = await mediaRoute(cfg())(
-      new Request(mediaBase, { method: "PATCH", headers: { origin: "https://site.example" } }),
+      new Request(mediaBase, { method: "PUT", headers: { origin: "https://site.example" } }),
       { DB: db, MEDIA: bucket, MEDIA_URL },
       ctx,
     );
