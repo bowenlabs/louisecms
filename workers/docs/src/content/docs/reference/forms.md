@@ -13,7 +13,7 @@ Define a form's fields **once**; derive the submission table, the public capture
 route ([`formRoute`](/reference/editor/)), server + client validation, and the
 review columns from that single definition. `inquiries` is the built-in default
 form ([`louise/db`](/reference/db/)). Validation reuses the shared `Rule`
-engine ([`cms`](/reference/cms/#validation)) — one definition, both sides. Peer:
+engine ([`content`](/reference/content/#validation)) — one definition, both sides. Peer:
 `drizzle-orm`. See the [forms guide](/guide/forms/) for the full walk-through.
 
 ## `defineForm(config)`

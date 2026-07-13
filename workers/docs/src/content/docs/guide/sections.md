@@ -127,7 +127,7 @@ The stored JSON is validated server-side before every write. Give `pagesRoute` a
 `validate` hook that runs `assertValidSections` against your catalog:
 
 ```ts
-import { assertValidSections } from "louise/cms";
+import { assertValidSections } from "louise/content";
 import { SECTIONS } from "./sections/catalog";
 
 pagesRoute({
@@ -144,7 +144,7 @@ pagesRoute({
 every item's `_type` is a known catalog entry, and that each field matches its
 declared shape (text/textarea → string; array → objects whose `itemFields` are
 validated in turn). A field can also carry a `validation` chain — the same
-[`Rule`](/reference/cms/) builder collection fields use, e.g.
+[`Rule`](/reference/content/) builder collection fields use, e.g.
 `heading: { type: "text", validation: (r) => r.required().max(80) }`.
 
 `assertValidSections` throws `LouiseValidationError` on any error-severity

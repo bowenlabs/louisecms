@@ -131,7 +131,7 @@ export const ALL: APIRoute = (ctx) =>
 | `submissionsRoute`  | `/api/louise/submissions/<form>`     | GET list · DELETE one — a form's rows in the shared table     |
 | `seedRoute`         | `/api/louise/seed`                   | seeds the `site_settings` singleton (idempotent)              |
 
-- **`pagesRoute`** — CMS pages CRUD. Create/update are allowlisted to
+- **`pagesRoute`** — content pages CRUD. Create/update are allowlisted to
   `fields` (defaults `DEFAULT_PAGE_FIELDS`) and rich fields (`body`) are run
   through `sanitizeRichHtml` before store. An optional `validate(data, ctx)` hook
   runs after allowlisting and before the write — throw `LouiseValidationError`

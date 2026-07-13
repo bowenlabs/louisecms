@@ -30,7 +30,7 @@ import { MediaPicker } from "./media-picker.jsx";
 import { injectStyles } from "./styles.js";
 
 // The section schema types live in core (server-safe) so the same catalog object
-// drives both this on-page editor and the write-time validator (louise/cms's
+// drives both this on-page editor and the write-time validator (louise/content's
 // validateSections). Type-only import — no server/validation code enters the
 // client bundle.
 import type {
@@ -39,7 +39,7 @@ import type {
   SectionField,
   SectionFieldType,
   SectionItem,
-} from "../core/cms/sections.js";
+} from "../core/content/sections.js";
 export type { SectionCatalog, SectionDef, SectionField, SectionFieldType, SectionItem };
 
 /** Whether a field is edited in place — only plain text is (default). `array`

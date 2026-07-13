@@ -20,12 +20,12 @@ exports you actually use:
 
 | If you import…                              | Also install                     |
 | ------------------------------------------- | -------------------------------- |
-| `louise/db`, `/cms`                      | `drizzle-orm`                    |
+| `louise/db`, `/content`                      | `drizzle-orm`                    |
 | `louise/client`                          | `solid-js prosekit @prosekit/pm` |
 | `/email`, `/queues`, `/errors`, `/commerce` | _(no peers)_                     |
 
 ```sh
-npm install drizzle-orm            # for /db and /cms
+npm install drizzle-orm            # for /db and /content
 npm install solid-js prosekit @prosekit/pm   # for the /client editor
 ```
 

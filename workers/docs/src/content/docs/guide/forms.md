@@ -31,8 +31,8 @@ export const contact = defineForm({
 
 Field `type` is `text | email | tel | url | textarea | number | select |
 checkbox | date`. `required` makes the column `NOT NULL` **and** adds a required
-check. `validation` reuses the shared [`Rule`](/reference/cms/#validation) builder
-— the *same* engine the CMS collections use, so there's one validation definition.
+check. `validation` reuses the shared [`Rule`](/reference/content/#validation) builder
+— the *same* engine the content collections use, so there's one validation definition.
 
 The result carries everything derived from the fields:
 

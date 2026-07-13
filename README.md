@@ -39,7 +39,7 @@ This is a [pnpm](https://pnpm.io) workspace driven by the
 ```
 packages/
   louise/          # louise — the published library
-    src/core/      # cms, db, media, forms, auth, security, worker, editor, commerce, email, queues, browser, errors
+    src/core/      # content, db, media, forms, auth, security, worker, editor, commerce, email, queues, browser, errors
     src/client/    # the inline edit client + ProseKit editor + Louise Settings (registry-driven settings surface)
     src/theme/     # the "louise" daisyUI editor theme (fonts, CSS)
 workers/

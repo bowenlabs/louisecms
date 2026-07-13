@@ -6,7 +6,7 @@
 // delete-safety a join (with `louise/media`'s LIKE scan retained as a
 // fallback for rich-text `<img src>` embeds that don't reference a row).
 //
-// A CMS `upload` field stores this row's `id`/`key`; the item then carries the
+// A content `upload` field stores this row's `id`/`key`; the item then carries the
 // asset's alt/caption/dimensions by join. `alt` is an asset-level default
 // (reused everywhere, DRY); a per-usage override and per-usage crop live on the
 // consumer row, not here. Compose with `mediaColumns` or use the ready-made

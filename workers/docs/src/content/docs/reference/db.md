@@ -56,7 +56,7 @@ variant when you need to extend it.
 
 ## `pages` / `inquiries`
 
-The two other framework-generic CMS tables, offered on the same
+The two other framework-generic content tables, offered on the same
 compose-or-use-as-is pattern:
 
 - **`pages`** (`pagesColumns`, `Page`, `NewPage`) — slug, title, sanitized rich
@@ -80,10 +80,10 @@ sharing the column set costs no flexibility.
 
 :::tip
 `db()` stays schema-agnostic — the tables above are **opt-in building blocks**,
-not a schema Louise imposes. They exist so the core CMS tables (`pages`,
+not a schema Louise imposes. They exist so the core content tables (`pages`,
 `inquiries`, `site_settings`) don't drift between projects; everything else —
 products, artworks, your content model — is yours. The
-[`cms`](/reference/cms/) module generates Drizzle schema from a collection
+[`content`](/reference/content/) module generates Drizzle schema from a collection
 config if you want that.
 :::
 

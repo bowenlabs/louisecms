@@ -1,6 +1,6 @@
 // Copyright (c) 2026 BowenLabs. Louise Toolkit is MIT licensed.
 //
-// Framework-owned `pages` — the generic CMS page table every Louise site has
+// Framework-owned `pages` — the generic content page table every Louise site has
 // (slug, title, sanitized rich body, publish status, SEO/OG, ordering,
 // timestamps). Owning the column set here stops it drifting between client
 // sites (the `site_settings` precedent). Import `pagesColumns` to compose your

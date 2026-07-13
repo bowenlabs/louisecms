@@ -1,6 +1,6 @@
 // Copyright (c) 2026 BowenLabs. Louise Toolkit is MIT licensed.
 //
-// louise/editor — the generic `pages` route. Framework CMS pages CRUD:
+// louise/editor — the generic `pages` route. Framework content pages CRUD:
 //   GET    /api/louise/pages        list
 //   POST   /api/louise/pages        create
 //   GET    /api/louise/pages/:id    read one

@@ -17,7 +17,7 @@ import { Icon } from "../icons.jsx";
 import { MediaUrlPicker } from "./fields.jsx";
 import { apiSend, louiseQueryKey, louiseQueryKeys } from "./query.js";
 
-/** A code-defined route listed alongside the CMS pages. */
+/** A code-defined route listed alongside the content pages. */
 export interface BuiltInPageRef {
   key: string;
   title: string;

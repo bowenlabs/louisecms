@@ -341,7 +341,7 @@ describe("InquiriesPanel — list + delete", () => {
 });
 
 describe("PagesPanel — list + built-in pages", () => {
-  it("lists CMS pages and any code-defined built-in pages", async () => {
+  it("lists content pages and any code-defined built-in pages", async () => {
     stubFetch((url, method) => {
       if (url.endsWith("/api/louise/pages") && method === "GET") {
         return jsonResponse({

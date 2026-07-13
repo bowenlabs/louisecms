@@ -5,7 +5,7 @@
 // own bespoke components (the preconfigured-blocks model). drizzle-kit reads this
 // to generate migrations; the Worker's editor routes import the composed `pages`.
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import { collectionVersionsTable } from "louise/cms";
+import { collectionVersionsTable } from "louise/content";
 import { inquiries, media, pagesColumns, siteSettings } from "louise/db";
 import { pagesCollection } from "./pages-collection.js";
 

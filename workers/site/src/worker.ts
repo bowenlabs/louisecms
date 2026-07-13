@@ -6,7 +6,7 @@
 //                           inquiries/seed), guarded by the cookie editor gate
 //   /media/*              → uploaded R2 objects (self-hosted media, no public bucket)
 //   /og.png?slug=&title=  → Browser-Run OG card, content-hash cached
-//   else                  → Astro SSR (marketing + published CMS pages)
+//   else                  → Astro SSR (marketing + published content pages)
 //   scheduled()           → daily link-checker across both hosts
 import { handle } from "@astrojs/cloudflare/handler";
 import {
@@ -29,7 +29,7 @@ import {
   settingsRoute,
   versionsRoute,
 } from "louise/editor";
-import { assertValidSections } from "louise/cms";
+import { assertValidSections } from "louise/content";
 import { inquiriesForm } from "louise/db";
 import { defineForm } from "louise/forms";
 import { composeWorker, type WorkerRoute } from "louise/worker";
@@ -280,7 +280,7 @@ const ogRoute: WorkerRoute<WorkerEnv> = (request, env) => {
 };
 
 export default composeWorker<WorkerEnv>({
-  // docs host first (never touches the CMS); then the editor API, media, OG;
+  // docs host first (never touches the content); then the editor API, media, OG;
   // everything else falls through to Astro SSR.
   routes: [docsRoute, ...editorRoutes, mediaAssetRoute, ogRoute],
   fetch: (request, env, ctx) => handle(request, env, ctx),

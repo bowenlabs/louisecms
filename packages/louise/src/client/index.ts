@@ -9,7 +9,7 @@
 // It self-gates: if there are no markers (i.e. the page wasn't rendered in
 // edit mode) it does nothing, so the bootstrap can lazy-import it safely.
 
-import { stegaClean } from "../core/cms/stega-clean.js";
+import { stegaClean } from "../core/content/stega-clean.js";
 import { type AutoSaveOption, type Autosave, createAutosave, resolveAutoSave } from "./autosave.js";
 import { mountRichText } from "./RichText.jsx";
 import { injectStyles } from "./styles.js";

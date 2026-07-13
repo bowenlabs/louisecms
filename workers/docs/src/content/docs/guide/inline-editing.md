@@ -107,5 +107,5 @@ The pattern, generalised:
 2. Render it with the marker (plain or `data-louise-type="richtext"`).
 3. Allowlist it in the save endpoint (and in your rich-field set if it's HTML).
 
-That's the whole loop — no schema migration on the CMS side, because the schema
+That's the whole loop — no schema migration on the content side, because the schema
 is yours.

@@ -5,8 +5,8 @@ import {
   diffDocuments,
   type FieldChange,
   formatPath,
-} from "../../src/core/cms/index.js";
-import type { JsonValue } from "../../src/core/cms/types.js";
+} from "../../src/core/content/index.js";
+import type { JsonValue } from "../../src/core/content/types.js";
 
 type Doc = Record<string, JsonValue>;
 

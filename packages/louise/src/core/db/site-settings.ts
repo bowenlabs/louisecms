@@ -12,7 +12,7 @@
 
 import { sql } from "drizzle-orm";
 import { check, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import type { JsonValue } from "../cms/index.js";
+import type { JsonValue } from "../content/index.js";
 
 /**
  * The framework-generic `site_settings` columns. Spread these into your own

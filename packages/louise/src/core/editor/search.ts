@@ -10,8 +10,8 @@
 // non-integer path segments that pagesRoute's `/:id` matcher would else 400 on.
 
 import type { SQLiteTable } from "drizzle-orm/sqlite-core";
-import { createLocalApi } from "../cms/localApi.js";
-import type { CollectionConfig } from "../cms/types.js";
+import { createLocalApi } from "../content/localApi.js";
+import type { CollectionConfig } from "../content/types.js";
 import { db } from "../db/index.js";
 import type { WorkerRoute } from "../worker/index.js";
 import { type EditorRouteEnv, guardEditor, json, type ResolveEditor } from "./shared.js";

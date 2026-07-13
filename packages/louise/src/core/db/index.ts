@@ -18,7 +18,7 @@ export function db<TSchema extends Record<string, unknown> = Record<string, neve
 // Framework-generic tables offered for composition — import the `*Columns` to
 // extend, or the ready-made table when the generic set is enough. The `db()`
 // wrapper above stays schema-agnostic; these are opt-in building blocks (so the
-// core CMS tables don't drift between client sites), not a schema Louise imposes.
+// core content tables don't drift between client sites), not a schema Louise imposes.
 export * from "./site-settings.js";
 export * from "./pages.js";
 export * from "./inquiries.js";

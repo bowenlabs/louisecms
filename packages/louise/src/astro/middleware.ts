@@ -74,7 +74,7 @@ export interface LouiseMiddlewareConfig<TEditor = unknown> {
 
 /**
  * Build the shared Louise Astro middleware: rate-limit → resolve the editor
- * session + sticky `?louise` edit mode → `next()` → CMS-freshness cache headers
+ * session + sticky `?louise` edit mode → `next()` → content-freshness cache headers
  * + CSP `style-src` rewrite + transport security headers. Sites supply the bits
  * that vary via {@link LouiseMiddlewareConfig} and export the result as
  * `onRequest`.
@@ -142,7 +142,7 @@ export function createLouiseMiddleware<TEditor = unknown>(
 
     const response = await next();
 
-    // CMS freshness: cached HTML would hide editor edits. Edit-mode pages are
+    // content freshness: cached HTML would hide editor edits. Edit-mode pages are
     // per-editor and must be live (`no-store`); public HTML `no-cache` so edits
     // appear without a manual purge. Only HTML — hashed `/_astro/*` assets keep
     // their immutable caching (set via `_headers`).

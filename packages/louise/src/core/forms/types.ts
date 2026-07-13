@@ -6,17 +6,17 @@
 // columns. `inquiries` is just the built-in default form (see `louise/db`).
 //
 // Field validation reuses the shared `Rule`/`validateValue` engine
-// (`louise/cms`) — there is one validation definition, run on both sides.
+// (`louise/content`) — there is one validation definition, run on both sides.
 
 import type {
   SQLiteColumn,
   SQLiteColumnBuilderBase,
   SQLiteTableWithColumns,
 } from "drizzle-orm/sqlite-core";
-import type { ValidationBuilder } from "../cms/validation.js";
+import type { ValidationBuilder } from "../content/validation.js";
 
 /**
- * Input semantics a public form needs, on top of the CMS field vocabulary. Each
+ * Input semantics a public form needs, on top of the content field vocabulary. Each
  * maps to a stored column type and a rendered input; `email`/`url`/`select`/
  * `number` also carry a built-in format/coercion check.
  */

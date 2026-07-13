@@ -17,7 +17,7 @@
 //      parser's serialization of malformed input (e.g. `<scr<script>ipt>`).
 //
 // The allowlist matches exactly the formatting Louise's ProseKit client emits
-// (see `../cms/richtext`): block + inline formatting, resizable images
+// (see `../content/richtext`): block + inline formatting, resizable images
 // (`<img width height>`), the text-color mark (`<span style="color:…"
 // data-text-color="…">`), and the page-builder block containers. Keep this in
 // sync with the client — that coupling is why the sanitizer lives in the
