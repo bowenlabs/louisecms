@@ -109,7 +109,9 @@ function validateRequiredFields(config: CollectionConfig, input: Record<string, 
   for (const [key, field] of Object.entries(flattenFields(config.fields))) {
     const hasDefault = field.defaultValue !== undefined;
     if (field.required && !hasDefault && input[key] === undefined) {
-      throw new LouiseContentError(`Missing required field "${key}" for collection "${config.slug}"`);
+      throw new LouiseContentError(
+        `Missing required field "${key}" for collection "${config.slug}"`,
+      );
     }
   }
 }
@@ -147,7 +149,10 @@ function wrapWriteError(config: CollectionConfig, error: unknown): never {
   if (error instanceof LouiseContentError) throw error;
   const message = errorChainMessage(error);
   if (message.includes("UNIQUE constraint failed")) {
-    throw new LouiseContentError(`Unique constraint violated for collection "${config.slug}"`, error);
+    throw new LouiseContentError(
+      `Unique constraint violated for collection "${config.slug}"`,
+      error,
+    );
   }
   throw new LouiseContentError(`Write failed for collection "${config.slug}"`, error);
 }

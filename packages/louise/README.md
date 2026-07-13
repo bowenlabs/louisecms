@@ -22,7 +22,7 @@ you use require:
 
 | If you use…                                                         | Install                                             |
 | ------------------------------------------------------------------- | --------------------------------------------------- |
-| `louise/db`, `/content`, `/media`, `/editor`, `/forms`                  | `drizzle-orm`                                       |
+| `louise/db`, `/content`, `/media`, `/editor`, `/forms`              | `drizzle-orm`                                       |
 | `louise/client`                                                     | `solid-js prosekit @prosekit/pm`                    |
 | `louise/client/settings`                                            | `@tanstack/solid-query` (+ the client peers)        |
 | `louise/auth`                                                       | `better-auth` (`@better-auth/passkey` for passkeys) |
@@ -41,7 +41,7 @@ The core primitives are dependency-injected — you pass in your Cloudflare bind
 | `louise/client/settings`                      | Louise Settings — the registry-driven settings surface: shell (`mountSettings`), framework panels, data layer     |
 | `louise/editor`                               | Framework-generic `api/louise/*` handlers (save/settings/pages/media/forms/submissions/seed)                      |
 | `louise/forms`                                | `defineForm` → derived table + capture route + validation + review columns; optional TanStack adapter             |
-| `louise/content`                                  | Collections, codegen, patch/validation, structure, webhooks                                                       |
+| `louise/content`                              | Collections, codegen, patch/validation, structure, webhooks                                                       |
 | `louise/db`                                   | Thin Drizzle-over-D1 helper + framework-owned `pages`/`inquiries`/`media`/`submissions`/`site_settings` columns   |
 | `louise/media`                                | R2 media: magic-byte-sniffed uploads, asset registry (alt/caption/dims), `cfImage` transforms, delete-safety scan |
 | `louise/auth`                                 | Better Auth factory + guard/handler + `generateAuthSchemaSql` (and the `louise` CLI)                              |

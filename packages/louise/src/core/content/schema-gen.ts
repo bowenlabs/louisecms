@@ -1,7 +1,12 @@
 // Copyright (c) 2026 BowenLabs. Louise Toolkit is MIT licensed.
 
 import { LouiseContentError } from "../errors.js";
-import { type ContentConfig, type CollectionConfig, type FieldConfig, flattenFields } from "./types.js";
+import {
+  type ContentConfig,
+  type CollectionConfig,
+  type FieldConfig,
+  flattenFields,
+} from "./types.js";
 
 function toSnakeCase(value: string): string {
   return value.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
