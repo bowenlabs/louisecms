@@ -13,6 +13,7 @@
 // the money unit (major vs minor) are confirmed against a live store when the
 // token is provisioned — the parsing below is defensive about both.
 
+import { s } from "../schema/index.js";
 import { hmacSha256Base64, safeEqual } from "./index.js";
 
 const STOREFRONT_API = "https://storefront-api.fourthwall.com/v1";
@@ -196,6 +197,23 @@ export interface FourthwallOrderEvent {
   testMode?: boolean;
   data?: Record<string, unknown>;
 }
+
+/**
+ * Validate a Fourthwall webhook body into a {@link FourthwallOrderEvent}. Run it
+ * via {@link import("./index.js").parseWebhookEvent} AFTER
+ * {@link verifyFourthwallSignature} — the HMAC proves the sender, this proves
+ * the envelope, then {@link mapFourthwallOrder} normalizes the (alias-heavy,
+ * intentionally untyped) `data`. Only the envelope is schema-locked here: the
+ * order body's field aliases (offers/items/lineItems, id/orderId, money as
+ * object-or-number) stay tolerant in the mapper, since a strict inner schema
+ * would reject — and so drop — a live order on any shape drift.
+ */
+export const fourthwallOrderEventSchema = s.object({
+  id: s.optional(s.string()),
+  type: s.optional(s.string()),
+  testMode: s.optional(s.boolean()),
+  data: s.optional(s.record()),
+});
 
 /** One line item on a normalized Fourthwall order. */
 export interface FourthwallOrderItem {

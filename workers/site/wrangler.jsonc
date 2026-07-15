@@ -19,6 +19,11 @@
     { "pattern": "louisetoolkit.com", "custom_domain": true },
     { "pattern": "docs.louisetoolkit.com", "custom_domain": true },
   ],
+  // Smart Placement (#91): marketing + published CMS pages SSR against D1 on
+  // nearly every request, so let Cloudflare run the Worker close to D1 when that
+  // lowers total latency. No-op for the static docs host (asset-only). Measure
+  // TTFB on published-page + editor routes and keep/revert based on the numbers.
+  "placement": { "mode": "smart" },
   // Browser Run (louise-toolkit/browser, #5): OG-image rendering + link-checking.
   "browser": {
     "binding": "BROWSER",

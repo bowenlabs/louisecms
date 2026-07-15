@@ -87,3 +87,79 @@ export async function parseOrThrow<Schema extends StandardSchemaV1>(
   }
   return result.value;
 }
+
+/** A single-issue failure at `path`, in the {@link StandardParseResult} shape. */
+function parseFailure<T>(message: string, path = ""): StandardParseResult<T> {
+  return { ok: false, violations: [{ path, message, severity: "error" }] };
+}
+
+/**
+ * Parse a raw JSON string, then validate it against `schema`. A malformed body
+ * becomes a violation (rather than a thrown `SyntaxError`), so a caller handles
+ * "not JSON" and "wrong shape" through the same result branch — e.g. parsing a
+ * signature-verified webhook body post-verify, where the HMAC proves the sender
+ * but not the payload's shape.
+ */
+export async function parseJson<Schema extends StandardSchemaV1>(
+  schema: Schema,
+  raw: string,
+): Promise<StandardParseResult<StandardSchemaV1.InferOutput<Schema>>> {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return parseFailure("Invalid JSON");
+  }
+  return standardValidate(schema, value);
+}
+
+/**
+ * Extract the first balanced JSON object/array embedded in `text` — tolerating
+ * model prose and ```json fences around it — respecting strings and escapes so
+ * a `}` inside a string value doesn't end the scan early. Returns the JSON
+ * substring, or `null` when no balanced object/array is present. Replaces the
+ * brittle `indexOf("{")`/`lastIndexOf("}")` slice.
+ */
+export function extractJson(text: string): string | null {
+  const start = text.search(/[{[]/);
+  if (start === -1) return null;
+  const open = text[start];
+  const close = open === "{" ? "}" : "]";
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === open) depth++;
+    else if (ch === close) {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * Parse the JSON an LLM emitted (often wrapped in prose or a ```json fence) and
+ * validate it against `schema` — the canonical untrusted-JSON case. Extracts
+ * the first balanced object/array ({@link extractJson}) rather than slicing on
+ * the first/last brace, then validates. Never throws: a missing/malformed JSON
+ * blob or a shape mismatch both come back as violations, so callers keep a
+ * graceful-degrade branch instead of a try/catch (#99). Pair with the model's
+ * own `response_format`/JSON-schema constraint where the provider supports it.
+ */
+export async function parseModelJson<Schema extends StandardSchemaV1>(
+  schema: Schema,
+  modelText: string,
+): Promise<StandardParseResult<StandardSchemaV1.InferOutput<Schema>>> {
+  const json = extractJson(modelText);
+  if (json === null) return parseFailure("No JSON object found in model output");
+  return parseJson(schema, json);
+}
