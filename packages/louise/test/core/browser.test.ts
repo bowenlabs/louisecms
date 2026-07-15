@@ -48,19 +48,19 @@ describe("ogImage", () => {
     const { cache, store } = makeCache();
     const render = vi.fn(async () => new Uint8Array([1, 2, 3]));
 
-    const first = await ogImage({ cacheKey: "og/x.png", html: "<h1>x</h1>", render, cache });
+    const first = await ogImage({ cacheKey: "og/x.png", markup: "<h1>x</h1>", render, cache });
     expect(first).toEqual({ bytes: new Uint8Array([1, 2, 3]), cached: false });
     expect(render).toHaveBeenCalledTimes(1);
     expect(store.size).toBe(1);
 
-    const second = await ogImage({ cacheKey: "og/x.png", html: "<h1>x</h1>", render, cache });
+    const second = await ogImage({ cacheKey: "og/x.png", markup: "<h1>x</h1>", render, cache });
     expect(second.cached).toBe(true);
     expect(render).toHaveBeenCalledTimes(1); // NOT called again — no browser session
   });
 
   it("always renders when no cache is provided", async () => {
     const render = vi.fn(async () => new Uint8Array([9]));
-    const res = await ogImage({ cacheKey: "k", html: "<h1/>", render });
+    const res = await ogImage({ cacheKey: "k", markup: "<h1/>", render });
     expect(res).toEqual({ bytes: new Uint8Array([9]), cached: false });
     expect(render).toHaveBeenCalledTimes(1);
   });
