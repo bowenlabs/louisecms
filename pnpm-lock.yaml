@@ -21,6 +21,19 @@ importers:
         specifier: ^0.14.5
         version: 0.14.5(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
 
+  packages/astroid:
+    dependencies:
+      louise-toolkit:
+        specifier: workspace:*
+        version: link:../louise
+    devDependencies:
+      '@typescript/native-preview':
+        specifier: 7.0.0-dev.20260707.2
+        version: 7.0.0-dev.20260707.2
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+
   packages/louise:
     devDependencies:
       '@better-auth/passkey':
