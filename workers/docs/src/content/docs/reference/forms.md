@@ -27,13 +27,13 @@ Returns the config plus everything derived from it — the Drizzle `columns`/
 
 ### `FormConfig` / `FormField`
 
-| field                 | purpose                                                                             |
-| --------------------- | ----------------------------------------------------------------------------------- |
-| `name`                | form + table name (a bare SQL identifier, `^[A-Za-z_][A-Za-z0-9_]*$`)                |
-| `fields`              | `Record<string, FormField>`                                                         |
-| `spam?`               | opt-in anti-spam (below)                                                             |
-| `notify?`             | `{ webhook?, email? }` — where a submission is announced                            |
-| `submitLabel?`        | button label for the render helper (default `"Send"`)                              |
+| field          | purpose                                                               |
+| -------------- | --------------------------------------------------------------------- |
+| `name`         | form + table name (a bare SQL identifier, `^[A-Za-z_][A-Za-z0-9_]*$`) |
+| `fields`       | `Record<string, FormField>`                                           |
+| `spam?`        | opt-in anti-spam (below)                                              |
+| `notify?`      | `{ webhook?, email? }` — where a submission is announced              |
+| `submitLabel?` | button label for the render helper (default `"Send"`)                 |
 
 A `FormField` is `{ type, label, required?, options?, placeholder?, help?,
 validation? }`. `type` is `text | email | tel | url | textarea | number | select
@@ -73,7 +73,11 @@ pass. `rateLimit` (KV fixed-window), `turnstile` (verified with
 `louise_ts`). `looksLikeSpam(config, body)` evaluates the silent pair.
 
 ```ts
-function verifyTurnstileToken(secret: string, token: string | null, remoteIp?: string | null): Promise<boolean>;
+function verifyTurnstileToken(
+  secret: string,
+  token: string | null,
+  remoteIp?: string | null,
+): Promise<boolean>;
 ```
 
 ## Notifications
@@ -91,7 +95,10 @@ A notification failure never fails the submission.
 
 ```ts
 function tanstackFormValidators(config): Record<string, ({ value }) => Promise<string | undefined>>;
-function tanstackFieldValidator(key, field): (args: { value: unknown }) => Promise<string | undefined>;
+function tanstackFieldValidator(
+  key,
+  field,
+): (args: { value: unknown }) => Promise<string | undefined>;
 ```
 
 Dependency-free validators in `@tanstack/solid-form`'s shape, backed by the same

@@ -36,7 +36,13 @@ call these endpoints. Peer: `drizzle-orm`.
 
 ```ts
 import { composeWorker } from "louise-toolkit/worker";
-import { pagesRoute, mediaRoute, settingsRoute, saveRoute, inquiriesRoute } from "louise-toolkit/editor";
+import {
+  pagesRoute,
+  mediaRoute,
+  settingsRoute,
+  saveRoute,
+  inquiriesRoute,
+} from "louise-toolkit/editor";
 import { getLouiseAuth, resolveEditorSession } from "louise-toolkit/auth";
 import { pages, media, siteSettings, inquiries } from "./db/schema";
 
@@ -116,20 +122,20 @@ export const ALL: APIRoute = (ctx) =>
 
 ## Routes
 
-| Factory             | Endpoint                             | Methods                                                       |
-| ------------------- | ------------------------------------ | ------------------------------------------------------------- |
-| `pagesRoute`        | `/api/louise/pages` (+ `/:id`)       | GET list · POST create · GET/PATCH/DELETE one                 |
-| `versionsRoute`     | `/api/louise/pages/:id/…`            | GET/POST `versions` · POST `publish` · POST `unpublish`       |
-| `searchRoute`       | `/api/louise/pages/{search,reindex}` | GET `search?q=` · POST `reindex`                              |
+| Factory             | Endpoint                             | Methods                                                                 |
+| ------------------- | ------------------------------------ | ----------------------------------------------------------------------- |
+| `pagesRoute`        | `/api/louise/pages` (+ `/:id`)       | GET list · POST create · GET/PATCH/DELETE one                           |
+| `versionsRoute`     | `/api/louise/pages/:id/…`            | GET/POST `versions` · POST `publish` · POST `unpublish`                 |
+| `searchRoute`       | `/api/louise/pages/{search,reindex}` | GET `search?q=` · POST `reindex`                                        |
 | `mediaRoute`        | `/api/louise/media`                  | GET list · POST upload · PATCH alt/caption · DELETE (reference-scanned) |
-| `listMediaRoute`    | `/api/louise/media`                  | registry-less variant: lists R2 directly, per-request `scope` |
-| `settingsRoute`     | `/api/louise/settings`               | GET · POST/PATCH (structured base + `custom`)                 |
-| `blobSettingsRoute` | `/api/louise/settings`               | GET · POST/PATCH — single-JSON-blob variant                   |
-| `saveRoute`         | `/api/louise/save`                   | POST (inline field save)                                      |
-| `formRoute`         | `/api/louise/forms/<name>`           | **public** POST capture (same-origin + spam guard)            |
-| `inquiriesRoute`    | `/api/louise/inquiries`              | GET list · DELETE one                                         |
-| `submissionsRoute`  | `/api/louise/submissions/<form>`     | GET list · DELETE one — a form's rows in the shared table     |
-| `seedRoute`         | `/api/louise/seed`                   | seeds the `site_settings` singleton (idempotent)              |
+| `listMediaRoute`    | `/api/louise/media`                  | registry-less variant: lists R2 directly, per-request `scope`           |
+| `settingsRoute`     | `/api/louise/settings`               | GET · POST/PATCH (structured base + `custom`)                           |
+| `blobSettingsRoute` | `/api/louise/settings`               | GET · POST/PATCH — single-JSON-blob variant                             |
+| `saveRoute`         | `/api/louise/save`                   | POST (inline field save)                                                |
+| `formRoute`         | `/api/louise/forms/<name>`           | **public** POST capture (same-origin + spam guard)                      |
+| `inquiriesRoute`    | `/api/louise/inquiries`              | GET list · DELETE one                                                   |
+| `submissionsRoute`  | `/api/louise/submissions/<form>`     | GET list · DELETE one — a form's rows in the shared table               |
+| `seedRoute`         | `/api/louise/seed`                   | seeds the `site_settings` singleton (idempotent)                        |
 
 - **`pagesRoute`** — content pages CRUD. Create/update are allowlisted to
   `fields` (defaults `DEFAULT_PAGE_FIELDS`) and rich fields (`body`) are run

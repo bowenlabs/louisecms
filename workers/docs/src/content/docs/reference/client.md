@@ -171,7 +171,12 @@ import type { SettingsConfig, CollectionTab } from "louise-toolkit/client/settin
 ### Panels
 
 ```ts
-import { PagesPanel, MediaPanel, SettingsPanel, InquiriesPanel } from "louise-toolkit/client/settings";
+import {
+  PagesPanel,
+  MediaPanel,
+  SettingsPanel,
+  InquiriesPanel,
+} from "louise-toolkit/client/settings";
 ```
 
 - `PagesPanel` / `MediaPanel` / `SettingsPanel` — the fixed framework panels the

@@ -23,7 +23,7 @@ function putMedia(bucket: R2Bucket, file: File, opts?): Promise<PutMediaResult>;
 ```
 
 Verifies the image from its **magic bytes** (never the client `Content-Type`),
-enforces a size cap (default 10 MB), stores it with the *verified* type + an
+enforces a size cap (default 10 MB), stores it with the _verified_ type + an
 immutable cache header, and reads intrinsic `width`/`height` from the header
 (`imageDimensions` — PNG/GIF/JPEG/WebP). Rejects oversize (413) / non-images
 (415) without writing. `sniffImageType` and `imageDimensions` are exported.
@@ -31,7 +31,7 @@ immutable cache header, and reads intrinsic `width`/`height` from the header
 ## Listing & metadata
 
 ```ts
-function listMedia(bucket, base): Promise<MediaItem[]>;               // R2, newest-first
+function listMedia(bucket, base): Promise<MediaItem[]>; // R2, newest-first
 function mediaMetaByUrl(db, tableName, base, urls?): Promise<Map<string, MediaMeta>>;
 ```
 
@@ -55,8 +55,8 @@ LIKE metacharacters; identifiers are validated + quoted.
 ## Transforms
 
 ```ts
-function cfImage(url, opts): string;                 // /cdn-cgi/image/… derivative
-function circleImage(url, size): { src; srcset };    // square focal crop + 1x/2x
+function cfImage(url, opts): string; // /cdn-cgi/image/… derivative
+function circleImage(url, size): { src; srcset }; // square focal crop + 1x/2x
 function cropStyle(crop): { objectPosition; transform; transformOrigin };
 ```
 

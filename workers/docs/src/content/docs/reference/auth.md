@@ -47,18 +47,18 @@ passed straight to `database` (no adapter).
 
 ### `LouiseAuthConfig`
 
-| field                  | purpose                                                                                                                       |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `rpName`               | passkey relying-party display name                                                                                            |
-| `mailFrom`             | `from` for the magic-link email                                                                                               |
-| `renderMagicLinkEmail` | render the email body (site branding)                                                                                         |
-| `resolveAdmins?`       | Site Admin allowlist; defaults to `OWNER_EMAIL` + `ENGINEER_EMAIL` from env. A platform passes a per-tenant `tenant_admins` lookup |
-| `customers?`           | enable customer email/password (omit for an admin-only editor)                                                                |
-| `additionalFields?`    | extra Better Auth user columns (e.g. `squareCustomerId`)                                                                      |
+| field                  | purpose                                                                                                                                                                     |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rpName`               | passkey relying-party display name                                                                                                                                          |
+| `mailFrom`             | `from` for the magic-link email                                                                                                                                             |
+| `renderMagicLinkEmail` | render the email body (site branding)                                                                                                                                       |
+| `resolveAdmins?`       | Site Admin allowlist; defaults to `OWNER_EMAIL` + `ENGINEER_EMAIL` from env. A platform passes a per-tenant `tenant_admins` lookup                                          |
+| `customers?`           | enable customer email/password (omit for an admin-only editor)                                                                                                              |
+| `additionalFields?`    | extra Better Auth user columns (e.g. `squareCustomerId`)                                                                                                                    |
 | `tablePrefix?`         | namespace the auth tables in the same D1 (e.g. `"auth_"`); must match the value passed to the [schema generator](#generating-the-auth-schema). Omit for default table names |
-| `session?`             | lifetime overrides (default 45-day rolling, daily refresh)                                                                    |
-| `sessionCacheKv?`      | cache sessions in KV (`secondaryStorage` + `storeSessionInDatabase`); omit for D1-only                                        |
-| `extraPlugins?`        | additional Better Auth plugins                                                                                                |
+| `session?`             | lifetime overrides (default 45-day rolling, daily refresh)                                                                                                                  |
+| `sessionCacheKv?`      | cache sessions in KV (`secondaryStorage` + `storeSessionInDatabase`); omit for D1-only                                                                                      |
+| `extraPlugins?`        | additional Better Auth plugins                                                                                                                                              |
 
 ```ts
 // src/lib/auth.ts
@@ -119,10 +119,10 @@ resolved editor session. Returns an error `Response`, or null to proceed.
 
 ## Generating the auth schema
 
-Better Auth doesn't ship hand-written table DDL — it *derives* its tables (user,
+Better Auth doesn't ship hand-written table DDL — it _derives_ its tables (user,
 session, account, verification, passkey, the admin `role`/ban columns, plus any
 `additionalFields`) from the config. So Louise **always generates** the auth
-migration rather than hand-rolling it, from the *same* plugin set the runtime
+migration rather than hand-rolling it, from the _same_ plugin set the runtime
 factory uses — the committed schema can't drift from what `getLouiseAuth`
 expects. One command:
 
@@ -151,10 +151,10 @@ The programmatic generator is also exported as
 Two supported layouts, chosen per deployment. Both keep one database and one
 migration stream — the difference is only a table-name namespace:
 
-| Option                                  | Isolation | user↔content joins | Best for                                                                 |
-| --------------------------------------- | --------- | ------------------ | ------------------------------------------------------------------------ |
+| Option                                  | Isolation | user↔content joins | Best for                                                                                  |
+| --------------------------------------- | --------- | ------------------ | ----------------------------------------------------------------------------------------- |
 | **A. Same D1, default names** (default) | low       | native SQL joins   | sites that join user↔content (customer↔order, `squareCustomerId`) — one owner, one stream |
-| **B. Same D1, `auth_` prefix**          | medium    | still native joins | a visible auth boundary in one database, without a second DB             |
+| **B. Same D1, `auth_` prefix**          | medium    | still native joins | a visible auth boundary in one database, without a second DB                              |
 
 **Default to A.** The sites have real user↔content joins, one owner, and one
 migration history; a second boundary adds friction for little gain. Choose **B**

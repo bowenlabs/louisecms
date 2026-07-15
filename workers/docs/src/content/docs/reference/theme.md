@@ -14,8 +14,8 @@ Two CSS assets — not JS — that style Louise's editor chrome. They ship as pl
 stylesheets (no build step, no peers); the package marks them as the only
 side-effectful files, so importing JS never accidentally pulls in CSS.
 
-| Export                       | Contents                                                                                                                                         |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Export                            | Contents                                                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `louise-toolkit/theme/louise.css` | The `louise` / `louise-dark` daisyUI themes + chrome variables (`--louise-accent`, `--louise-ring`, `--louise-font-head`, `--louise-font-body`). |
 | `louise-toolkit/theme/fonts.css`  | The `.louise-type` typography contract (Hepta Slab headers, Roboto Flex body).                                                                   |
 

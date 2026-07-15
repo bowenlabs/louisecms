@@ -30,8 +30,8 @@ exports you actually use:
 
 | If you import…                              | Also install                     |
 | ------------------------------------------- | -------------------------------- |
-| `louise-toolkit/db`, `/content`                      | `drizzle-orm`                    |
-| `louise-toolkit/client`                          | `solid-js prosekit @prosekit/pm` |
+| `louise-toolkit/db`, `/content`             | `drizzle-orm`                    |
+| `louise-toolkit/client`                     | `solid-js prosekit @prosekit/pm` |
 | `/email`, `/queues`, `/errors`, `/commerce` | _(no peers)_                     |
 
 ```sh
