@@ -19,11 +19,11 @@ import { defineForm } from "louise-toolkit/forms";
 export const contact = defineForm({
   name: "inquiries", // form + table name (a bare SQL identifier)
   fields: {
-    firstName: { type: "text",     label: "First name" },
-    lastName:  { type: "text",     label: "Last name" },
-    email:     { type: "email",    label: "Email",   required: true },
-    regarding: { type: "select",   label: "Regarding", options: ["General", "Booking", "Press"] },
-    message:   { type: "textarea", label: "Message", required: true, validation: (r) => r.max(5000) },
+    firstName: { type: "text", label: "First name" },
+    lastName: { type: "text", label: "Last name" },
+    email: { type: "email", label: "Email", required: true },
+    regarding: { type: "select", label: "Regarding", options: ["General", "Booking", "Press"] },
+    message: { type: "textarea", label: "Message", required: true, validation: (r) => r.max(5000) },
   },
   spam: { turnstile: true, rateLimit: { max: 5, windowSec: 60 } },
 });
@@ -32,7 +32,7 @@ export const contact = defineForm({
 Field `type` is `text | email | tel | url | textarea | number | select |
 checkbox | date`. `required` makes the column `NOT NULL` **and** adds a required
 check. `validation` reuses the shared [`Rule`](/reference/content/#validation) builder
-— the *same* engine the content collections use, so there's one validation definition.
+— the _same_ engine the content collections use, so there's one validation definition.
 
 The result carries everything derived from the fields:
 
@@ -57,7 +57,7 @@ export default composeWorker({
     formRoute({
       form: contact,
       // Optional spam wiring, used only when the form declares it:
-      rateLimitKv: (env) => env.RL,          // KV for the fixed-window limiter
+      rateLimitKv: (env) => env.RL, // KV for the fixed-window limiter
       turnstileSecret: (env) => env.TURNSTILE_SECRET,
     }),
     // …your review route + SSR fallthrough
@@ -90,7 +90,7 @@ import { contact } from "./forms"; // a client-safe { name, fields } config
 ```
 
 Pass a plain `{ name, fields }` config to the client (not the `defineForm`
-*result*, which carries the Drizzle table — keep that server-side). For a
+_result_, which carries the Drizzle table — keep that server-side). For a
 non-Solid site, `mountForm(hostEl, { form })` renders into a DOM node and returns
 a disposer. A `file` field uploads through the media route and stores the
 returned URL. On a `422` the server's per-field messages are painted back onto
@@ -108,7 +108,9 @@ import { tanstackFormValidators } from "louise-toolkit/forms";
 const v = tanstackFormValidators(contact); // { [field]: ({ value }) => error | undefined }
 
 // wire each into a TanStack field:
-<form.Field name="email" validators={{ onChange: v.email }}>{/* … */}</form.Field>
+<form.Field name="email" validators={{ onChange: v.email }}>
+  {/* … */}
+</form.Field>;
 ```
 
 `tanstackFormValidators` (and per-field `tanstackFieldValidator`) return
@@ -135,7 +137,7 @@ All guards are opt-in per form. The visible ones are enforced only when
   [turnstile setup path](https://developers.cloudflare.com/turnstile/) for the
   widget.
 
-Two **silent** heuristics reject a likely bot with a *fake success* (so it can't
+Two **silent** heuristics reject a likely bot with a _fake success_ (so it can't
 tune) and never insert:
 
 - `spam.honeypot: "website"` — a decoy field a bot fills but a human never sees.
@@ -152,7 +154,9 @@ path** (`waitUntil`), so a slow webhook/mail never delays the visitor:
 ```ts
 defineForm({
   name: "inquiries",
-  fields: { /* … */ },
+  fields: {
+    /* … */
+  },
   notify: { webhook: env.SLACK_WEBHOOK, email: { to: "hello@studio.com" } },
 });
 ```
@@ -169,8 +173,8 @@ RSVP, waitlist, booking — write to the shared **`submissions`** table
 (`louise-toolkit/db`) instead, so a new form needs **no migration**:
 
 ```ts
-formRoute({ form: rsvp, genericTable: "submissions" });     // capture → { form, data }
-submissionsRoute({ form: "rsvp", resolveEditor });           // review that form's rows
+formRoute({ form: rsvp, genericTable: "submissions" }); // capture → { form, data }
+submissionsRoute({ form: "rsvp", resolveEditor }); // review that form's rows
 ```
 
 `formRoute`'s `genericTable` stores each submission as `{ form, data }` (the

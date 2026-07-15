@@ -94,7 +94,7 @@ is never attacker-controlled and is `localhost`/`127.0.0.1` only under
 `wrangler dev`. If you run Louise **behind a proxy that forwards a client-set
 `Host`**, don't rely on this: provision a real `SESSION_SECRET` for every
 non-local environment (the fallback only triggers when the secret is
-missing/empty *and* the hostname is local), or wire your own dev gate.
+missing/empty _and_ the hostname is local), or wire your own dev gate.
 :::
 
 ## `louiseSecurityHeaders(response, opts)` · `rewriteCspStyleSrc(response, styleSrc)`

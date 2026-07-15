@@ -67,7 +67,13 @@ as the source of truth. Two things make it strict:
   await assertValidSections(catalog, data.sections, { operation, mediaBase: env.MEDIA_URL });
 
   // settings — reject an external logo/favicon/share-image (422)
-  settingsRoute({ table, resolveEditor, columns, imageKeys: ["logoUrl", "faviconUrl", "defaultOgImageUrl"], mediaBase: env.MEDIA_URL });
+  settingsRoute({
+    table,
+    resolveEditor,
+    columns,
+    imageKeys: ["logoUrl", "faviconUrl", "defaultOgImageUrl"],
+    mediaBase: env.MEDIA_URL,
+  });
 
   // rich-text body — drop a pasted remote <img> (keeps media-hosted ones)
   sanitizeRichHtml(html, { mediaBase: env.MEDIA_URL });
@@ -95,4 +101,3 @@ pixel `width`/`height`.
   `mediaMetaByUrl(env.DB, "media", env.MEDIA_URL)` and fill in the alt while
   rendering (skip it in edit mode so the editor still sees the true per-usage
   value). A per-usage alt on the consuming record always wins.
-

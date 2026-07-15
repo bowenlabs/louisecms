@@ -82,9 +82,9 @@ Edits persist **automatically**, on a short idle debounce — there is no Save
 button to remember. It's on by default:
 
 ```ts
-mountLouise();                          // auto-save on (800ms debounce)
+mountLouise(); // auto-save on (800ms debounce)
 mountLouise({ autoSave: { debounceMs: 1500 } }); // tune the delay
-mountLouise({ autoSave: false });       // opt out → a manual Save button returns
+mountLouise({ autoSave: false }); // opt out → a manual Save button returns
 ```
 
 - Auto-save reuses the **same save** as a manual click: a live field write, or a

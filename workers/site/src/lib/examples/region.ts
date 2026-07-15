@@ -25,5 +25,8 @@ export function extractRegion(src: string, name: string): string {
   const rest = lines.slice(from + 1);
   const to = rest.findIndex((l) => /#endregion\b/.test(l));
   const body = to === -1 ? rest : rest.slice(0, to);
-  return dedent(body).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return dedent(body)
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
