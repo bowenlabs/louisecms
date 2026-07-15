@@ -10,7 +10,9 @@ export default defineConfig({
         test: {
           name: "node",
           environment: "node",
-          include: ["test/core/**/*.test.ts"],
+          // Core primitives plus the framework-agnostic `louise/astro` helpers
+          // (build-time loaders — pure Node, no DOM).
+          include: ["test/core/**/*.test.ts", "test/astro/**/*.test.ts"],
         },
       },
       {

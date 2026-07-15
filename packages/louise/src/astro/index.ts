@@ -7,6 +7,12 @@
 
 export { type CatalogLoaderConfig, defineCatalogLoader } from "./catalog.js";
 export {
+  collectionToAstroSchema,
+  louiseLoader,
+  type LouiseLoaderConfig,
+  type LouiseRow,
+} from "./content-loader.js";
+export {
   createLouiseMiddleware,
   type LouiseMiddlewareConfig,
   type LouiseMiddlewareRateLimit,

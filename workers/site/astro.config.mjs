@@ -44,6 +44,14 @@ export default defineConfig({
         access: "secret",
         optional: true,
       }),
+      // Build-time D1 REST access for the `louiseLoader` Content Layer example
+      // (src/content.config.ts). The loader runs during `astro build` in Node —
+      // off any Worker binding — so it reads published pages over the D1 REST
+      // API. All optional: unset (a local build / CI without secrets) → the
+      // `publishedPages` collection simply builds empty.
+      CF_ACCOUNT_ID: envField.string({ context: "server", access: "secret", optional: true }),
+      CF_D1_DATABASE_ID: envField.string({ context: "server", access: "secret", optional: true }),
+      CF_API_TOKEN: envField.string({ context: "server", access: "secret", optional: true }),
     },
   },
   vite: {
