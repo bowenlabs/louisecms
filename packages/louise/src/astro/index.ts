@@ -12,6 +12,7 @@ export {
   type LouiseLoaderConfig,
   type LouiseRow,
 } from "./content-loader.js";
+export { formToAstroSchema } from "./form-schema.js";
 export {
   createLouiseMiddleware,
   type LouiseMiddlewareConfig,
