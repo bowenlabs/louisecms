@@ -37,6 +37,14 @@ declare module "*.wasm" {
   export default module;
 }
 
+// Type the `cloudflare:workers` runtime module the whole site reads bindings
+// from (Astro v6+ removed Astro.locals.runtime.env). Without this, `astro check`
+// can't resolve the virtual module — the build transpiles it fine, but the
+// types need declaring here.
+declare module "cloudflare:workers" {
+  export const env: CloudflareEnv;
+}
+
 // Bindings are read via `import { env } from "cloudflare:workers"` (Astro v6+
 // removed Astro.locals.runtime.env), so Locals only carries what middleware sets.
 declare namespace App {

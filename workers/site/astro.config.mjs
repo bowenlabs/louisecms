@@ -1,5 +1,6 @@
 // @ts-check
 import cloudflare from "@astrojs/cloudflare";
+import solid from "@astrojs/solid-js";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, envField } from "astro/config";
 
@@ -16,6 +17,9 @@ export default defineConfig({
   site: "https://louisetoolkit.com",
   output: "server",
   adapter: cloudflare(),
+  // Solid islands (ADR 0001) — matches every consuming site. Powers the typed
+  // editor islands that call Astro Actions (see src/islands, src/actions).
+  integrations: [solid()],
   // Typed, validated editor-gate config (astro:env). Values still come from
   // wrangler.jsonc `vars` / `wrangler secret` at runtime; this is the schema +
   // types over them, read via `astro:env/server` at the composition layer
