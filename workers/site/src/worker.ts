@@ -8,7 +8,6 @@
 //   /og.png?slug=&title=  → Browser-Run OG card, content-hash cached
 //   else                  → Astro SSR (marketing + published content pages)
 //   scheduled()           → daily link-checker across both hosts
-import { LOUISE_EDITOR_PASSWORD, LOUISE_SESSION_SECRET, OWNER_EMAIL } from "astro:env/server";
 import { handle } from "@astrojs/cloudflare/handler";
 import {
   checkLinks,
@@ -34,7 +33,8 @@ import { assertValidSections } from "louise-toolkit/content";
 import { inquiriesForm } from "louise-toolkit/db";
 import { defineForm } from "louise-toolkit/forms";
 import { composeWorker, type WorkerRoute } from "louise-toolkit/worker";
-import { type EditorGateEnv, resolveEditorFromCookie } from "./lib/louise/session.js";
+import { getEditorGate } from "./lib/louise/gate.js";
+import { resolveEditorFromCookie } from "./lib/louise/session.js";
 import { pagesCollection } from "./pages-collection.js";
 import { inquiries, media, pages, pagesVersions, siteSettings } from "./schema.js";
 import { SECTIONS } from "./sections/catalog.js";
@@ -132,10 +132,10 @@ async function serveDocs(url: URL, request: Request, env: WorkerEnv): Promise<Re
 /* ── Louise Toolkit editor routes ─────────────────────────────────────────── */
 
 // Editor-gate config comes from astro:env (astro.config.mjs schema), not the
-// binding env — session.ts stays framework-agnostic and just takes the values.
-const editorGate: EditorGateEnv = { LOUISE_SESSION_SECRET, LOUISE_EDITOR_PASSWORD, OWNER_EMAIL };
+// binding env. Read per request via getEditorGate() — never captured at module
+// scope — so the Worker's runtime env is resolved inside the request path.
 const resolveEditor = (request: Request, _env: WorkerEnv) =>
-  resolveEditorFromCookie(request, editorGate);
+  resolveEditorFromCookie(request, getEditorGate());
 
 /** The site's media base — matches `vars.MEDIA_URL` in wrangler.jsonc. Every
  *  editor image (sections, settings, page body) is validated against this so

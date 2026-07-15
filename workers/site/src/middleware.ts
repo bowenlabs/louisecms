@@ -1,11 +1,6 @@
-import { LOUISE_EDITOR_PASSWORD, LOUISE_SESSION_SECRET, OWNER_EMAIL } from "astro:env/server";
 import { defineMiddleware } from "astro:middleware";
-import {
-  EDIT_COOKIE,
-  type EditorGateEnv,
-  resolveEditorFromCookie,
-  SESSION_MAX_AGE,
-} from "./lib/louise/session.js";
+import { getEditorGate } from "./lib/louise/gate.js";
+import { EDIT_COOKIE, resolveEditorFromCookie, SESSION_MAX_AGE } from "./lib/louise/session.js";
 
 // Resolves the editor session per request and derives edit mode, following the
 // Louise contract: `locals.editor` authorizes writes (re-checked in the Worker's
@@ -13,8 +8,7 @@ import {
 // edit affordances. Edit mode is a sticky cookie toggled by `?louise` /
 // `?louise=off`; entering it requires a valid session.
 export const onRequest = defineMiddleware(async (context, next) => {
-  const gate: EditorGateEnv = { LOUISE_SESSION_SECRET, LOUISE_EDITOR_PASSWORD, OWNER_EMAIL };
-  const editor = await resolveEditorFromCookie(context.request, gate);
+  const editor = await resolveEditorFromCookie(context.request, getEditorGate());
 
   const url = context.url;
   const secure = url.protocol === "https:";
