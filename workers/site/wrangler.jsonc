@@ -41,10 +41,16 @@
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "louisetoolkit-media" }],
   // KV for the security rate limiter.
   "kv_namespaces": [{ "binding": "RL", "id": "647f7c7b690c41229fea208fdef346a6" }],
+  // The editor-gate config is typed + validated by the astro:env schema
+  // (astro.config.mjs), read via `astro:env/server`: OWNER_EMAIL defaults in the
+  // schema (public), and the secrets go in `wrangler secret put`
+  // (LOUISE_SESSION_SECRET / LOUISE_EDITOR_PASSWORD). Local dev reads them from
+  // `.env` — see .env.example.
   "vars": {
     // Public base for media URLs; same-origin /media/* keeps media
-    // self-contained (no external R2 domain). SESSION secret + editor password
-    // are secrets (see .dev.vars locally / `wrangler secret put` in prod).
+    // self-contained (no external R2 domain). NOT astro:env — the
+    // framework-agnostic media route (louise-toolkit/editor `mediaRoute`) reads
+    // this off the runtime env, so it stays a Worker `var` (see src/env.d.ts).
     "MEDIA_URL": "/media",
   },
   // Daily link-checker crawl of the docs (worker.ts `scheduled`).

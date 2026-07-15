@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { LOUISE_EDITOR_PASSWORD, LOUISE_SESSION_SECRET, OWNER_EMAIL } from "astro:env/server";
 import { defineMiddleware } from "astro:middleware";
 import {
   EDIT_COOKIE,
@@ -13,7 +13,7 @@ import {
 // edit affordances. Edit mode is a sticky cookie toggled by `?louise` /
 // `?louise=off`; entering it requires a valid session.
 export const onRequest = defineMiddleware(async (context, next) => {
-  const gate = env as unknown as EditorGateEnv;
+  const gate: EditorGateEnv = { LOUISE_SESSION_SECRET, LOUISE_EDITOR_PASSWORD, OWNER_EMAIL };
   const editor = await resolveEditorFromCookie(context.request, gate);
 
   const url = context.url;

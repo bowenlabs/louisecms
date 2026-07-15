@@ -10,10 +10,14 @@
 
 import type { EditorSession } from "louise-toolkit/auth";
 
-/** Secrets the gate reads off the Worker/runtime env. */
+/** Config the gate reads. Env-injected (see the astro:env schema in
+ *  astro.config.mjs) so this module stays framework-agnostic — it runs
+ *  identically in the Worker editor routes and in SSR middleware. */
 export interface EditorGateEnv {
-  /** HMAC key that signs the session cookie. */
-  LOUISE_SESSION_SECRET: string;
+  /** HMAC key that signs the session cookie. Optional: unset in local dev
+   *  before provisioning; the sign/verify paths only run once a real session is
+   *  in play, so anonymous SSR never needs it. */
+  LOUISE_SESSION_SECRET?: string;
   /** Shared password the /louise login checks. */
   LOUISE_EDITOR_PASSWORD?: string;
   /** Optional owner email used as the editor identity. */
@@ -65,7 +69,7 @@ export async function signSession(env: EditorGateEnv, editor: EditorSession): Pr
     exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
   };
   const body = b64urlEncode(encoder.encode(JSON.stringify(payload)));
-  const key = await hmacKey(env.LOUISE_SESSION_SECRET);
+  const key = await hmacKey(env.LOUISE_SESSION_SECRET ?? "");
   const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(body)));
   return `${body}.${b64urlEncode(sig)}`;
 }
@@ -80,7 +84,7 @@ export async function verifySession(
   if (dot < 1) return null;
   const body = token.slice(0, dot);
   const sig = token.slice(dot + 1);
-  const key = await hmacKey(env.LOUISE_SESSION_SECRET);
+  const key = await hmacKey(env.LOUISE_SESSION_SECRET ?? "");
   const ok = await crypto.subtle
     .verify("HMAC", key, b64urlDecode(sig), encoder.encode(body))
     .catch(() => false);
