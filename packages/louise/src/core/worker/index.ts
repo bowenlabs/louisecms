@@ -54,3 +54,9 @@ export function composeWorker<Env = unknown>(
   if (options.scheduled) handler.scheduled = options.scheduled;
   return handler;
 }
+
+// `withHealing` — self-healing recovery that maps typed LouiseErrors to
+// deterministic retry / stale-fallback / async-escalation strategies. Kept in
+// its own file; re-exported here so it's part of the `louise-toolkit/worker`
+// subpath alongside `composeWorker`.
+export * from "./healing.js";
