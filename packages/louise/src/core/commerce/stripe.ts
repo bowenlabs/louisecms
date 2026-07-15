@@ -12,6 +12,7 @@
 // compensates v2-style: events are treated as pointers and the
 // PaymentIntent is re-fetched from the API (see retrievePaymentIntent).
 
+import { s } from "../schema/index.js";
 import { hmacSha256Hex, safeEqual } from "./index.js";
 
 const STRIPE_API = "https://api.stripe.com/v1";
@@ -129,6 +130,22 @@ export async function verifyStripeSignature(
   const expected = await hmacSha256Hex(secret, `${t}.${payload}`);
   return v1s.some((v1) => safeEqual(expected, v1));
 }
+
+/**
+ * A Stripe webhook event, validated to the fields this integration reads.
+ * Run it via {@link import("./index.js").parseWebhookEvent} AFTER
+ * {@link verifyStripeSignature} — the signature proves the sender, this proves
+ * the shape. The handler treats events as thin pointers and re-fetches the
+ * PaymentIntent by id (see {@link retrievePaymentIntent}), so this locks down
+ * `id` + `type` + the presence of `data.object` and leaves the polymorphic
+ * object (PaymentIntent / Invoice / …) as an untyped record for the handler to
+ * narrow per `type`. Extra envelope keys (api_version, created, …) are dropped.
+ */
+export const stripeWebhookEventSchema = s.object({
+  id: s.string(),
+  type: s.string(),
+  data: s.object({ object: s.record() }),
+});
 
 export interface StripeAddress {
   name?: string;

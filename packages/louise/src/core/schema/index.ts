@@ -10,9 +10,12 @@
 
 export type { StandardSchemaV1 } from "./standard.js";
 export {
+  extractJson,
   issuesToViolations,
+  parseJson,
+  parseModelJson,
   parseOrThrow,
   standardValidate,
   type StandardParseResult,
 } from "./validate.js";
-export { type NumberOptions, s, type StringOptions } from "./builders.js";
+export { type ArrayOptions, type NumberOptions, s, type StringOptions } from "./builders.js";

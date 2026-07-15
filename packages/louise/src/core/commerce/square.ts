@@ -12,6 +12,7 @@
 // an Order, then charge it with a Web Payments SDK card token via /v2/payments
 // (card data is tokenized in the browser and never reaches the Worker).
 
+import { s } from "../schema/index.js";
 import { centsToMajor, hmacSha256Base64, safeEqual, type Money } from "./index.js";
 
 export type SquareEnvironment = "sandbox" | "production";
@@ -748,15 +749,15 @@ interface RawSubscription {
   charged_through_date?: string;
 }
 
-function mapSubscription(s: RawSubscription): SquareSubscription {
+function mapSubscription(sub: RawSubscription): SquareSubscription {
   return {
-    id: s.id ?? "",
-    status: s.status ?? "",
-    planVariationId: s.plan_variation_id ?? null,
-    customerId: s.customer_id ?? null,
-    cardId: s.card_id ?? null,
-    startDate: s.start_date ?? null,
-    chargedThroughDate: s.charged_through_date ?? null,
+    id: sub.id ?? "",
+    status: sub.status ?? "",
+    planVariationId: sub.plan_variation_id ?? null,
+    customerId: sub.customer_id ?? null,
+    cardId: sub.card_id ?? null,
+    startDate: sub.start_date ?? null,
+    chargedThroughDate: sub.charged_through_date ?? null,
   };
 }
 
@@ -1265,3 +1266,23 @@ export async function verifySquareSignature(
   const expected = await hmacSha256Base64(signatureKey, notificationUrl + body);
   return safeEqual(expected, signatureHeader.trim());
 }
+
+/**
+ * A Square webhook event, validated to the envelope this integration reads.
+ * Run it via {@link import("./index.js").parseWebhookEvent} AFTER
+ * {@link verifySquareSignature}. Square nests the changed resource under
+ * `data.object`, keyed by `data.type` (e.g. `payment`, `invoice`, `order`) with
+ * `data.id` the resource id — the handler switches on the top-level `type` and
+ * reads/re-fetches from there. The object stays an untyped record (its shape
+ * depends on `data.type`); extra envelope keys (merchant_id, created_at, …) are
+ * dropped.
+ */
+export const squareWebhookEventSchema = s.object({
+  type: s.string(),
+  event_id: s.optional(s.string()),
+  data: s.object({
+    type: s.optional(s.string()),
+    id: s.optional(s.string()),
+    object: s.optional(s.record()),
+  }),
+});

@@ -134,6 +134,49 @@ function optional<Schema extends StandardSchemaV1>(
   });
 }
 
+export interface ArrayOptions {
+  /** Minimum length (inclusive). */
+  min?: number;
+  /** Maximum length (inclusive). */
+  max?: number;
+  /** Override the failure message for the non-array / bounds checks. */
+  message?: string;
+}
+
+/**
+ * An array whose every element is validated by `item`. Element issues are
+ * re-pathed under their index (`0`, `1`, …) — mirroring how {@link object}
+ * re-paths by key — so a caller sees `items.2.qty`, not a flat message. Used by
+ * the commerce webhook schemas to parse order line-item lists (offers/items).
+ */
+function array<Item extends StandardSchemaV1>(
+  item: Item,
+  options: ArrayOptions = {},
+): StandardSchemaV1<unknown, StandardSchemaV1.InferOutput<Item>[]> {
+  return build<StandardSchemaV1.InferOutput<Item>[]>((value) => {
+    if (!Array.isArray(value)) return fail(options.message ?? "Expected an array");
+    if (options.min !== undefined && value.length < options.min) {
+      return fail(options.message ?? `Expected at least ${options.min} item(s)`);
+    }
+    if (options.max !== undefined && value.length > options.max) {
+      return fail(options.message ?? `Expected at most ${options.max} item(s)`);
+    }
+    const output: StandardSchemaV1.InferOutput<Item>[] = [];
+    const issues: StandardSchemaV1.Issue[] = [];
+    for (let i = 0; i < value.length; i++) {
+      const result = runSync(item, value[i]);
+      if (result.issues) {
+        for (const issue of result.issues) {
+          issues.push({ message: issue.message, path: [i, ...(issue.path ?? [])] });
+        }
+      } else {
+        output.push(result.value as StandardSchemaV1.InferOutput<Item>);
+      }
+    }
+    return issues.length > 0 ? { issues } : { value: output };
+  });
+}
+
 type Shape = Record<string, StandardSchemaV1>;
 type InferShape<S extends Shape> = { [K in keyof S]: StandardSchemaV1.InferOutput<S[K]> };
 
@@ -210,5 +253,6 @@ export const s = {
   enumOf,
   unknown,
   record,
+  array,
   optional,
 } as const;

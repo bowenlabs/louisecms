@@ -6,6 +6,26 @@
 //   louise-toolkit/commerce/stripe · /square · /fourthwall
 // All three verify webhooks with these helpers, so the crypto lives here once.
 
+import { parseJson, type StandardParseResult, type StandardSchemaV1 } from "../schema/index.js";
+
+/**
+ * Parse a signature-verified webhook body against its event schema. Run this
+ * AFTER the provider's `verify…Signature` returns true: the HMAC proves the
+ * sender, this proves the *shape* — a signature can't tell you the provider
+ * didn't change the payload. Malformed JSON or a shape mismatch both come back
+ * as violations (never a throw), so a handler can reject uniformly. Each
+ * provider module exports its schema — {@link
+ * import("./stripe.js").stripeWebhookEventSchema},
+ * {@link import("./square.js").squareWebhookEventSchema},
+ * {@link import("./fourthwall.js").fourthwallOrderEventSchema}.
+ */
+export function parseWebhookEvent<Schema extends StandardSchemaV1>(
+  schema: Schema,
+  rawBody: string,
+): Promise<StandardParseResult<StandardSchemaV1.InferOutput<Schema>>> {
+  return parseJson(schema, rawBody);
+}
+
 /** A money amount, expressed in a currency's minor unit (e.g. cents). */
 export interface Money {
   /** Amount in the currency's minor unit — cents for USD. */

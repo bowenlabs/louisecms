@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { LouiseValidationError } from "../../src/core/errors.js";
 import type { StandardSchemaV1 } from "../../src/core/schema/index.js";
 import {
+  extractJson,
   issuesToViolations,
+  parseJson,
+  parseModelJson,
   parseOrThrow,
   s,
   standardValidate,
@@ -104,6 +107,27 @@ describe("s.* builders", () => {
     expect(bad.ok).toBe(false);
     if (!bad.ok) expect(bad.violations[0]?.path).toBe("b");
   });
+
+  it("array() validates each element and passes the typed list through", async () => {
+    const items = s.array(s.object({ slug: s.string(), qty: s.number({ int: true }) }));
+    expect(await standardValidate(items, [{ slug: "a", qty: 1 }])).toEqual({
+      ok: true,
+      value: [{ slug: "a", qty: 1 }],
+    });
+  });
+
+  it("array() rejects a non-array and enforces min/max bounds", async () => {
+    expect((await standardValidate(s.array(s.string()), "nope")).ok).toBe(false);
+    expect((await standardValidate(s.array(s.string(), { min: 1 }), [])).ok).toBe(false);
+    expect((await standardValidate(s.array(s.string(), { max: 1 }), ["a", "b"])).ok).toBe(false);
+  });
+
+  it("array() re-paths an element issue under its index", async () => {
+    const items = s.array(s.object({ qty: s.number() }));
+    const bad = await standardValidate(items, [{ qty: 1 }, { qty: "two" }]);
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.violations[0]?.path).toBe("1.qty");
+  });
 });
 
 describe("standardValidate runner", () => {
@@ -139,5 +163,75 @@ describe("parseOrThrow", () => {
       expect(err).toBeInstanceOf(LouiseValidationError);
       expect((err as LouiseValidationError).violations[0]?.path).toBe("a");
     }
+  });
+});
+
+describe("parseJson", () => {
+  const schema = s.object({ id: s.string(), type: s.string() });
+
+  it("parses a valid JSON body and validates it", async () => {
+    expect(await parseJson(schema, '{"id":"evt_1","type":"order.placed","extra":1}')).toEqual({
+      ok: true,
+      value: { id: "evt_1", type: "order.placed" },
+    });
+  });
+
+  it("reports malformed JSON as a violation instead of throwing", async () => {
+    const r = await parseJson(schema, "{not json");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.violations).toEqual([{ path: "", message: "Invalid JSON", severity: "error" }]);
+  });
+
+  it("reports a shape mismatch as violations", async () => {
+    const r = await parseJson(schema, '{"id":1}');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.violations.map((v) => v.path)).toContain("id");
+  });
+});
+
+describe("extractJson", () => {
+  it("returns a bare JSON object unchanged", () => {
+    expect(extractJson('{"a":1}')).toBe('{"a":1}');
+  });
+
+  it("pulls the object out of model prose and ```json fences", () => {
+    expect(extractJson('Sure! Here is the SEO:\n```json\n{"title":"Hi"}\n```\nHope that helps'))
+      .toBe('{"title":"Hi"}');
+  });
+
+  it("does not stop on a brace inside a string value", () => {
+    expect(extractJson('{"title":"a } b","ok":true}')).toBe('{"title":"a } b","ok":true}');
+  });
+
+  it("handles a top-level array and nested braces", () => {
+    expect(extractJson("prefix [{\"a\":{\"b\":1}}] suffix")).toBe('[{"a":{"b":1}}]');
+  });
+
+  it("returns null when there is no JSON", () => {
+    expect(extractJson("no json here")).toBeNull();
+  });
+});
+
+describe("parseModelJson", () => {
+  const seo = s.object({ title: s.string(), description: s.string() });
+
+  it("extracts and validates JSON embedded in prose", async () => {
+    const text = 'Here you go:\n```json\n{"title":"T","description":"D"}\n```';
+    expect(await parseModelJson(seo, text)).toEqual({
+      ok: true,
+      value: { title: "T", description: "D" },
+    });
+  });
+
+  it("degrades gracefully when the model emits no JSON", async () => {
+    const r = await parseModelJson(seo, "I could not do that.");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.violations[0]?.message).toMatch(/No JSON/);
+  });
+
+  it("degrades gracefully when the JSON is the wrong shape", async () => {
+    const r = await parseModelJson(seo, '{"title":"only title"}');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.violations.map((v) => v.path)).toContain("description");
   });
 });
