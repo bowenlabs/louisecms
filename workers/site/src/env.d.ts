@@ -2,18 +2,21 @@
 /// <reference types="astro/client" />
 /// <reference types="@cloudflare/workers-types" />
 
-// Bindings this Worker exposes (wrangler.jsonc). BROWSER comes from
-// louise-toolkit/browser's LouiseBrowserEnv, so it's intentionally omitted here to
-// avoid a duplicate/conflicting declaration.
+// Cloudflare *bindings* this Worker exposes (wrangler.jsonc), read via
+// `import { env } from "cloudflare:workers"`. MEDIA_URL stays here (not
+// astro:env) because the framework-agnostic media route (louise-toolkit/editor
+// `mediaRoute`, whose `MediaRouteEnv` requires it) reads it off this runtime env.
+// The editor-gate config (OWNER_EMAIL, LOUISE_SESSION_SECRET,
+// LOUISE_EDITOR_PASSWORD) IS typed + validated by the astro:env schema — see
+// astro.config.mjs, consumed via `astro:env/server`. BROWSER comes from
+// louise-toolkit/browser's LouiseBrowserEnv, so it's intentionally omitted here
+// to avoid a duplicate/conflicting declaration.
 type CloudflareEnv = {
   DB: D1Database;
   MEDIA: R2Bucket;
   MEDIA_URL: string;
   RL: KVNamespace;
   ASSETS: Fetcher;
-  LOUISE_SESSION_SECRET: string;
-  LOUISE_EDITOR_PASSWORD?: string;
-  OWNER_EMAIL?: string;
 };
 
 // Bindings are read via `import { env } from "cloudflare:workers"` (Astro v6+

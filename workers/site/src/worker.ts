@@ -33,6 +33,7 @@ import { assertValidSections } from "louise-toolkit/content";
 import { inquiriesForm } from "louise-toolkit/db";
 import { defineForm } from "louise-toolkit/forms";
 import { composeWorker, type WorkerRoute } from "louise-toolkit/worker";
+import { getEditorGate } from "./lib/louise/gate.js";
 import { resolveEditorFromCookie } from "./lib/louise/session.js";
 import { pagesCollection } from "./pages-collection.js";
 import { inquiries, media, pages, pagesVersions, siteSettings } from "./schema.js";
@@ -130,7 +131,11 @@ async function serveDocs(url: URL, request: Request, env: WorkerEnv): Promise<Re
 
 /* ── Louise Toolkit editor routes ─────────────────────────────────────────── */
 
-const resolveEditor = (request: Request, env: WorkerEnv) => resolveEditorFromCookie(request, env);
+// Editor-gate config comes from astro:env (astro.config.mjs schema), not the
+// binding env. Read per request via getEditorGate() — never captured at module
+// scope — so the Worker's runtime env is resolved inside the request path.
+const resolveEditor = (request: Request, _env: WorkerEnv) =>
+  resolveEditorFromCookie(request, getEditorGate());
 
 /** The site's media base — matches `vars.MEDIA_URL` in wrangler.jsonc. Every
  *  editor image (sections, settings, page body) is validated against this so
