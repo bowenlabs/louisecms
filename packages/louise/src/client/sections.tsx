@@ -181,9 +181,13 @@ function wireInline(
     if (hint) node.dataset.louisePlaceholder = hint;
     node.classList.add("louise-editable", "louise-sfield");
     node.setAttribute("contenteditable", "plaintext-only");
-    node.setAttribute("spellcheck", "false");
+    // Native browser spellcheck on multiline (textarea-backed, prose-y) fields
+    // only; single-line headline/label fields stay off, where red squiggles are
+    // just noise (#142). Rich-text prose uses ProseKit + Harper (#110) instead.
+    const multiline = node.hasAttribute("data-louise-multiline");
+    node.setAttribute("spellcheck", multiline ? "true" : "false");
     // Single-line fields swallow Enter; multiline (textarea-backed) keeps it.
-    if (!node.hasAttribute("data-louise-multiline")) {
+    if (!multiline) {
       node.addEventListener("keydown", (e) => {
         if (e.key === "Enter") e.preventDefault();
       });
