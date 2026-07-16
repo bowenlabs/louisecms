@@ -60,6 +60,7 @@ export default {
       "src/core/forms/index.ts",
       "src/core/media/index.ts",
       "src/core/queues/index.ts",
+      "src/core/realtime/index.ts",
       "src/core/schema/index.ts",
       "src/core/security/index.ts",
       "src/core/worker/index.ts",
