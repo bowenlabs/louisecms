@@ -41,7 +41,7 @@ export {
   saveRoute,
 } from "./save.js";
 export { DEFAULT_PAGE_FIELDS, type PagesRouteConfig, pagesRoute, pickFields } from "./pages.js";
-export { type SearchRouteConfig, searchRoute } from "./search.js";
+export { type SearchRouteConfig, type SearchVectorConfig, searchRoute } from "./search.js";
 export { type AiRouteConfig, aiRoute } from "./ai.js";
 export { latestPendingDraft, type VersionsRouteConfig, versionsRoute } from "./versions.js";
 export {

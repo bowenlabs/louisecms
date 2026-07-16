@@ -313,3 +313,9 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
 function capLength(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s;
 }
+
+// Semantic search (embeddings + Vectorize, #86) — same module surface
+// (`louise-toolkit/ai`), same degrade-gracefully contract. Kept in its own file
+// (embeddings.ts) since it adds the Vectorize index contract on top of the
+// Workers AI runner these editorial assists use.
+export * from "./embeddings.js";

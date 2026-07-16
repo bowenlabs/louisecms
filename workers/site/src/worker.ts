@@ -35,6 +35,7 @@ import { OG_FONT_FAMILY, ogRenderer } from "./lib/og/render.js";
 import { getEditorGate } from "./lib/louise/gate.js";
 import { resolveEditorFromCookie } from "./lib/louise/session.js";
 import { pagesDraftDeps } from "./lib/louise/versioned-pages.js";
+import { syncPageVector } from "./lib/louise/vectors.js";
 import { pagesCollection } from "./pages-collection.js";
 import { inquiries, media, pages, siteSettings } from "./schema.js";
 import { SECTIONS } from "./sections/catalog.js";
@@ -168,10 +169,20 @@ const editorRoutes: WorkerRoute<WorkerEnv>[] = [
         : undefined;
     },
   }),
-  // Full-text search over pages (title/body/flattened sections) — /search + a
-  // /reindex to rebuild the FTS index. Before pagesRoute (its `/:id` matcher
-  // would else claim the non-integer `search`/`reindex` segments).
-  searchRoute({ table: pages, config: pagesCollection, resolveEditor }),
+  // Search over pages (title/body/flattened sections) — /search + a /reindex to
+  // rebuild the FTS index. Before pagesRoute (its `/:id` matcher would else claim
+  // the non-integer `search`/`reindex` segments). The optional `vector` layer
+  // (#86) blends Vectorize kNN with the FTS keyword match via RRF; both bindings
+  // are optional, so absent either the route is exactly FTS-only.
+  searchRoute({
+    table: pages,
+    config: pagesCollection,
+    resolveEditor,
+    vector: {
+      index: (env) => env.VECTORIZE,
+      ai: (env) => env.AI,
+    },
+  }),
   // `sections` (structured builder blocks JSON) is editable alongside the
   // framework page fields, and validated against the catalog before write — a
   // malformed sections payload (unknown block type, wrong field shape) is
@@ -285,6 +296,10 @@ export default composeWorker<WorkerEnv>({
     await processBatch(batch as MessageBatch<SideEffectJob>, async (job) => {
       if (job.kind === "reindex" && job.collection === "pages") {
         await reindexDoc(db(env.DB), pages, pagesCollection, job.id);
+        // Embed-on-publish (#86): mirror the FTS sync into Vectorize on the same
+        // deferred job. Best-effort — a missing binding / embed error is
+        // swallowed, so it never fails (or retries) the FTS reindex above.
+        await syncPageVector(env, job.id);
       }
     });
   },

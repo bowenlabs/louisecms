@@ -50,6 +50,17 @@
   // fractions of a cent per call. Opt-in per feature (the media route's `altText`
   // accessor); absent → those assists degrade to null, never blocking a save.
   "ai": { "binding": "AI" },
+  // Vectorize (#86): semantic search alongside the FTS5 keyword index. OPTIONAL
+  // and left COMMENTED until provisioned — a referenced-but-unbound index fails
+  // the deploy (same footgun as Queues). To activate: create an index whose
+  // dimensions match the embedding model (bge-base-en-v1.5, the core/ai
+  // DEFAULT_EMBEDDING_MODEL, is 768-dim), then uncomment the binding below:
+  //   wrangler vectorize create louisetoolkit-content --dimensions=768 --metric=cosine
+  // Absent the binding, env.VECTORIZE is undefined → embed-on-publish
+  // (workflows/publish.ts) + the searchRoute semantic layer no-op, so search
+  // stays FTS-only. Backfill existing pages by republishing them (each publish
+  // embeds the live row); POST /api/louise/pages/reindex rebuilds FTS only.
+  // "vectorize": [{ "binding": "VECTORIZE", "index_name": "louisetoolkit-content" }],
   // KV: the security rate limiter (RL) + the auto-save draft write-buffer (#70).
   // DRAFTS coalesces high-frequency auto-save writes so a burst of edits doesn't
   // hit D1 with a version row per debounce tick (see versionsRoute `bufferKv`).

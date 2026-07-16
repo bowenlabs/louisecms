@@ -18,6 +18,7 @@ import { db } from "louise-toolkit/db";
 import { defineWorkflow } from "louise-toolkit/workflows";
 import { ogCacheStore } from "../lib/og/cache.js";
 import { OG_FONT_FAMILY, ogRenderer } from "../lib/og/render.js";
+import { syncPageVector } from "../lib/louise/vectors.js";
 import { pagesCollection } from "../pages-collection.js";
 import { pages } from "../schema.js";
 
@@ -31,6 +32,7 @@ interface PublishState {
   slug?: string;
   title?: string;
   reindexed?: boolean;
+  embedded?: boolean;
   ogWarmed?: boolean;
   notified?: boolean;
 }
@@ -55,6 +57,18 @@ const runPublish = defineWorkflow<CloudflareEnv, PublishParams, PublishState>([
     run: async ({ env, payload }) => {
       await reindexDoc(db(env.DB), pages, pagesCollection, payload.id);
       return { reindexed: true };
+    },
+  },
+  // Semantic index (#86): embed the published row into Vectorize alongside the
+  // FTS reindex. syncPageVector is best-effort (no VECTORIZE/AI binding or any
+  // embed error → no-op), so the step never fails the pipeline; it's a durable
+  // step for its own retry budget + observability.
+  {
+    name: "embed",
+    config: { retries: { limit: 3, delay: "10 seconds" } },
+    run: async ({ env, payload }) => {
+      await syncPageVector(env, payload.id);
+      return { embedded: true };
     },
   },
   // Pre-warm the OG share card into the Cache API so the first social share is a
