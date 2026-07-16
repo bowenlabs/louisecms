@@ -29,9 +29,11 @@
 // written twice.
 
 import { z } from "astro/zod";
+import type { EditorSession } from "../core/auth/types.js";
 import { applyFieldSave, type SaveCollectionConfig } from "../core/editor/save.js";
 import { applySettingsPatch, type SettingsPatchConfig } from "../core/editor/settings.js";
 import type { EditorRouteEnv } from "../core/editor/shared.js";
+import { applySaveDraft, type SaveDraftDeps } from "../core/editor/versions.js";
 import { sanitizeRichHtml } from "../core/security/index.js";
 
 /** The subset of Astro's `ActionError` codes the editor handlers emit. */
@@ -95,6 +97,17 @@ export interface LouiseSaveActionConfig<
 export interface LouiseSettingsActionConfig<Env extends EditorRouteEnv = EditorRouteEnv>
   extends EditorActionDeps<Env>, SettingsPatchConfig {}
 
+/** The validated `saveDraft` input: which versioned row (`id`) plus the changed
+ *  fields (`data`). The route takes `id` from the URL path + the fields as the
+ *  body; the Action bundles both, since an Action call has no URL. */
+export interface SaveDraftActionInput {
+  id: number;
+  data: Record<string, unknown>;
+}
+
+export interface LouiseSaveDraftActionConfig<Env extends EditorRouteEnv = EditorRouteEnv>
+  extends EditorActionDeps<Env>, SaveDraftDeps<Env> {}
+
 /** Map an `apply*` HTTP status onto an Astro `ActionError` code. */
 function statusToCode(status: number): ActionErrorCode {
   if (status === 401) return "UNAUTHORIZED";
@@ -119,12 +132,18 @@ function resolveDeps<Env extends EditorRouteEnv>(deps: EditorActionDeps<Env>): R
   };
 }
 
-/** Require the (middleware-resolved) editor session — a missing one is a 401.
- *  CSRF/same-origin is Astro's default for Action POSTs, so only auth is ported. */
-function requireEditor(resolved: ResolvedDeps<EditorRouteEnv>, ctx: EditorActionContext): void {
-  if (!resolved.getEditor(ctx)) {
+/** Require the (middleware-resolved) editor session — a missing one is a 401 —
+ *  and return it. CSRF/same-origin is Astro's default for Action POSTs, so only
+ *  auth is ported. */
+function requireEditor(
+  resolved: ResolvedDeps<EditorRouteEnv>,
+  ctx: EditorActionContext,
+): EditorSession {
+  const editor = resolved.getEditor(ctx);
+  if (!editor) {
     throw new resolved.ActionError({ code: "UNAUTHORIZED", message: "Editor session required" });
   }
+  return editor as EditorSession;
 }
 
 /** Throw the injected `ActionError` for an `apply*` failure — `never`, so a
@@ -196,6 +215,43 @@ export function louiseSettingsAction<Env extends EditorRouteEnv = EditorRouteEnv
       const result = await applySettingsPatch(resolved.getEnv(context), config, input);
       if (!result.ok) throwActionError(resolved.ActionError, result.status, result.error);
       return { ok: true, ignored: result.ignored };
+    },
+  };
+}
+
+/**
+ * Build the `{ input, handler }` config for the editor `saveDraft` Action (the
+ * versioned-page draft save). Mirrors {@link louiseSaveAction}, but the input
+ * bundles the row `id` with the changed `data` (an Action call has no URL to carry
+ * the id). The handler shares the raw `versionsRoute` store path via
+ * {@link applySaveDraft} — the concurrent-surface merge base and the #70 KV
+ * write-buffer — and returns that path's JSON body (a created `version`, or
+ * `{ buffered: true }` when a write is coalesced into the buffer).
+ */
+export function louiseSaveDraftAction<Env extends EditorRouteEnv = EditorRouteEnv>(
+  config: LouiseSaveDraftActionConfig<Env>,
+) {
+  const resolved = resolveDeps(config);
+
+  return {
+    input: z.object({
+      id: z.number().int(),
+      data: z.record(z.string(), z.unknown()),
+    }),
+    handler: async (
+      input: SaveDraftActionInput,
+      context: EditorActionContext,
+    ): Promise<Record<string, unknown>> => {
+      const editor = requireEditor(resolved, context);
+      const result = await applySaveDraft(
+        resolved.getEnv(context),
+        config,
+        editor,
+        input.id,
+        input.data,
+      );
+      if (!result.ok) throwActionError(resolved.ActionError, result.status, result.error);
+      return result.body;
     },
   };
 }

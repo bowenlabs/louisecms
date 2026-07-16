@@ -10,10 +10,13 @@ export {
   type EditorActionContext,
   type EditorActionDeps,
   type LouiseSaveActionConfig,
+  type LouiseSaveDraftActionConfig,
   type LouiseSettingsActionConfig,
   louiseSaveAction,
+  louiseSaveDraftAction,
   louiseSettingsAction,
   type SaveActionInput,
+  type SaveDraftActionInput,
 } from "./actions.js";
 export { type CatalogLoaderConfig, defineCatalogLoader } from "./catalog.js";
 export {

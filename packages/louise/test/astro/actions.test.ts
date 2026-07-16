@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   type EditorActionContext,
   louiseSaveAction,
+  louiseSaveDraftAction,
   louiseSettingsAction,
 } from "../../src/astro/actions.js";
+import { collectionVersionsTable, defineCollection } from "../../src/core/content/index.js";
 import { pages, siteSettings } from "../../src/core/db/index.js";
 
 // Fake D1 mirroring test/core/editor.test.ts's makeD1, plus `.raw()`: drizzle's
@@ -140,7 +142,9 @@ const settingsAction = louiseSettingsAction({
 // One all-null settings row: the singleton read goes through drizzle's `.raw()`,
 // and drizzle skips decoding for null cells, so an all-null array of the right
 // length decodes to a row of nulls regardless of column types. `[]` = no row.
-const settingsRow = [new Array(getTableConfig(siteSettings).columns.length).fill(null)];
+const settingsRow = [
+  Array.from({ length: getTableConfig(siteSettings).columns.length }, () => null),
+];
 
 describe("louiseSettingsAction", () => {
   it("patches allowlisted keys and reports the ignored ones", async () => {
@@ -163,5 +167,44 @@ describe("louiseSettingsAction", () => {
     await expect(settingsAction.handler({ siteName: "Acme" }, makeCtx(db))).rejects.toMatchObject({
       code: "NOT_FOUND",
     });
+  });
+});
+
+const draftConfig = defineCollection({
+  slug: "pages",
+  fields: { slug: { type: "text" }, title: { type: "text" }, sections: { type: "json" } },
+  versions: { drafts: true },
+});
+const saveDraftAction = louiseSaveDraftAction({
+  table: pages,
+  versionsTable: collectionVersionsTable(draftConfig),
+  config: draftConfig,
+  ActionError: FakeActionError,
+});
+
+// The merge-base / KV-buffer happy path saves a draft version to D1 and is
+// covered by the astro-preview E2E against a real local D1 (there is no async
+// in-memory SQLite harness in this repo) — mirroring versions-route.test.ts. These
+// cover the Action wrapper contract, which short-circuits before that machinery.
+describe("louiseSaveDraftAction", () => {
+  it("input schema requires an integer id and a data object", () => {
+    expect(saveDraftAction.input.safeParse({ id: 5, data: { title: "x" } }).success).toBe(true);
+    expect(saveDraftAction.input.safeParse({ data: { title: "x" } }).success).toBe(false);
+    expect(saveDraftAction.input.safeParse({ id: 1.5, data: {} }).success).toBe(false);
+  });
+
+  it("throws UNAUTHORIZED without an editor, and never touches D1", async () => {
+    const { db, calls } = makeD1(() => []);
+    await expect(
+      saveDraftAction.handler({ id: 5, data: { title: "x" } }, makeCtx(db, null)),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("throws NOT_FOUND when the versioned row does not exist", async () => {
+    const { db } = makeD1(() => []); // the parent-row select yields nothing
+    await expect(
+      saveDraftAction.handler({ id: 999, data: { title: "x" } }, makeCtx(db)),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });

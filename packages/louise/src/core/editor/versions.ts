@@ -15,6 +15,7 @@
 
 import { eq } from "drizzle-orm";
 import { getTableConfig, type SQLiteColumn, type SQLiteTable } from "drizzle-orm/sqlite-core";
+import type { EditorSession } from "../auth/types.js";
 import { createVersionedLocalApi, type DeferReindex } from "../content/localApi.js";
 import { type CollectionConfig, flattenFields } from "../content/types.js";
 import { db } from "../db/index.js";
@@ -36,17 +37,17 @@ import { type EditorRouteEnv, guardEditor, json, type ResolveEditor } from "./sh
 const PUBLISH_BODY = s.object({ versionId: s.optional(s.number({ int: true })) });
 const DISCARD_BODY = s.object({ versionId: s.number({ int: true }) });
 
-export interface VersionsRouteConfig<Env extends EditorRouteEnv = EditorRouteEnv> {
+/** The store-side deps a versioned draft save needs — the subset of
+ *  {@link VersionsRouteConfig} that {@link applySaveDraft} uses (no transport/auth
+ *  concern), shared with the Astro `saveDraft` Action so the raw route and the
+ *  Action build the same versioned local API and buffer. */
+export interface SaveDraftDeps<Env extends EditorRouteEnv = EditorRouteEnv> {
   /** The main content table (e.g. the composed `pages`). */
   table: SQLiteTable;
   /** The `${slug}_versions` companion table (see content codegen's `collectionVersionsTable`). */
   versionsTable: SQLiteTable;
   /** The collection config — its `fields` drive the draft snapshot + publish validation. */
   config: CollectionConfig;
-  /** Resolve the editor session (site wraps its own auth). */
-  resolveEditor: ResolveEditor<Env>;
-  /** Mount path (the collection base). Default `/api/louise/pages`. */
-  path?: string;
   /**
    * Optional validation of the full merged draft before it's saved (e.g. the
    * site's `assertValidSections`). Throw to reject the draft with the thrown
@@ -72,6 +73,107 @@ export interface VersionsRouteConfig<Env extends EditorRouteEnv = EditorRouteEnv
   bufferKv?: (env: Env) => DraftBufferKV | undefined;
   /** Flush cadence for the KV buffer, ms. Default {@link DEFAULT_FLUSH_MS} (10s). */
   bufferFlushMs?: number;
+}
+
+export interface VersionsRouteConfig<
+  Env extends EditorRouteEnv = EditorRouteEnv,
+> extends SaveDraftDeps<Env> {
+  /** Resolve the editor session (site wraps its own auth). */
+  resolveEditor: ResolveEditor<Env>;
+  /** Mount path (the collection base). Default `/api/louise/pages`. */
+  path?: string;
+}
+
+/** The outcome of {@link applySaveDraft}: on success the exact JSON body + status
+ *  the raw route returns (a created `version` at 201, or `{ buffered: true }` at
+ *  200 when a KV write is coalesced); on failure a status + message (+ optional
+ *  per-field `violations` from a `validate` throw). */
+export type SaveDraftResult =
+  | { ok: true; status: number; body: Record<string, unknown> }
+  | { ok: false; status: number; error: string; violations?: unknown };
+
+/**
+ * Save an already-validated draft for a versioned row: merge the edit (config
+ * fields only) over the freshest pending work — the KV buffer, else the newest
+ * pending draft's snapshot, else the live row (see {@link latestPendingDraft}) —
+ * optionally run the site's `validate`, then either absorb the write into the KV
+ * buffer (#70) or write a new draft version to D1. Carries no transport/parse
+ * concern — the raw {@link versionsRoute} (POST `/:id/versions`) and the Astro
+ * `saveDraft` Action each validate their own input, then converge here.
+ */
+export async function applySaveDraft<Env extends EditorRouteEnv = EditorRouteEnv>(
+  env: Env,
+  deps: SaveDraftDeps<Env>,
+  editor: EditorSession,
+  id: number,
+  input: Record<string, unknown>,
+): Promise<SaveDraftResult> {
+  const database = db(env.DB);
+  const pkCol = getTableConfig(deps.table).columns.find((c) => c.primary) as SQLiteColumn;
+  const fieldKeys = Object.keys(flattenFields(deps.config.fields));
+  const context = { session: editor };
+  const api = createVersionedLocalApi(
+    database,
+    deps.table,
+    deps.versionsTable,
+    deps.config,
+    undefined,
+    { deferReindex: deps.deferReindex?.(env) },
+  );
+  const kv = deps.bufferKv?.(env);
+  const bufferKey = draftBufferKey(deps.config.slug, id);
+
+  const [current] = await database.select().from(deps.table).where(eq(pkCol, id)).limit(1);
+  if (!current) return { ok: false, status: 404, error: "Not found" };
+  const cur = current as Record<string, unknown>;
+  const publishedVersionId = (cur.publishedVersionId as number | null) ?? null;
+  const versions = (await api.findVersions(context, id)) as Record<string, unknown>[];
+  const pending = latestPendingDraft(versions, publishedVersionId);
+  // The merge base is the freshest pending work: the KV buffer (if buffering is
+  // on and one exists — it's always ≥ the D1 draft), then the D1 draft, then the
+  // live row. So a partial save from a second surface still layers onto the
+  // in-flight buffer rather than reverting it.
+  const buffered = kv ? await readDraftBuffer(kv, bufferKey) : null;
+  const mergeBase =
+    (buffered?.data as Record<string, unknown> | undefined) ??
+    (pending?.versionData as Record<string, unknown> | undefined) ??
+    cur;
+  const merged: Record<string, unknown> = {};
+  for (const key of fieldKeys) {
+    // Prefer this save's fields, then the base snapshot, then the live row — so a
+    // key the snapshot happens to lack still resolves.
+    merged[key] = key in input ? input[key] : key in mergeBase ? mergeBase[key] : cur[key];
+  }
+  if (deps.validate) {
+    try {
+      await deps.validate(merged);
+    } catch (err) {
+      const { message, violations } = violationsOf(err);
+      return { ok: false, status: 422, error: message, ...(violations ? { violations } : {}) };
+    }
+  }
+
+  // Buffered: absorb the write in KV; flush to D1 only on the first write of a
+  // session and every bufferFlushMs, so a burst of auto-saves collapses to ~one
+  // D1 version per interval. Unbuffered: write straight to D1 as before.
+  if (kv) {
+    const now = Date.now();
+    const flushMs = deps.bufferFlushMs ?? DEFAULT_FLUSH_MS;
+    if (shouldFlushBuffer(buffered, now, flushMs)) {
+      const version = await api.saveDraft(context, id, merged as never);
+      await writeDraftBuffer(kv, bufferKey, { data: merged, updatedAt: now, flushedAt: now });
+      return { ok: true, status: 201, body: { version, buffered: false } };
+    }
+    await writeDraftBuffer(kv, bufferKey, {
+      data: merged,
+      updatedAt: now,
+      flushedAt: buffered ? buffered.flushedAt : now,
+    });
+    return { ok: true, status: 200, body: { buffered: true } };
+  }
+
+  const version = await api.saveDraft(context, id, merged as never);
+  return { ok: true, status: 201, body: { version } };
 }
 
 /** Extract per-field violations from a thrown validation error, if present. */
@@ -118,9 +220,6 @@ export function versionsRoute<Env extends EditorRouteEnv = EditorRouteEnv>(
 ): WorkerRoute<Env> {
   const base = cfg.path ?? "/api/louise/pages";
   const pkCol = getTableConfig(cfg.table).columns.find((c) => c.primary) as SQLiteColumn;
-  // Config field keys (flattened) — the only keys a draft snapshot may carry, so
-  // a merged draft strips bookkeeping columns (id/status/published_version_id/…).
-  const fieldKeys = Object.keys(flattenFields(cfg.config.fields));
 
   return async (request, env) => {
     const path = new URL(request.url).pathname;
@@ -186,58 +285,14 @@ export function versionsRoute<Env extends EditorRouteEnv = EditorRouteEnv>(
         await request.json().catch(() => null),
       );
       if (!parsedInput.ok) return json({ error: "Invalid JSON" }, 400);
-      const input = parsedInput.value;
-      const [current] = await database.select().from(cfg.table).where(eq(pkCol, id)).limit(1);
-      if (!current) return json({ error: "Not found" }, 404);
-      const cur = current as Record<string, unknown>;
-      const publishedVersionId = (cur.publishedVersionId as number | null) ?? null;
-      const versions = (await api.findVersions(context, id)) as Record<string, unknown>[];
-      const pending = latestPendingDraft(versions, publishedVersionId);
-      // The merge base is the freshest pending work: the KV buffer (if buffering
-      // is on and one exists — it's always ≥ the D1 draft), then the D1 draft,
-      // then the live row. So a partial save from a second surface still layers
-      // onto the in-flight buffer rather than reverting it.
-      const buffered = kv ? await readDraftBuffer(kv, bufferKey) : null;
-      const mergeBase =
-        (buffered?.data as Record<string, unknown> | undefined) ??
-        (pending?.versionData as Record<string, unknown> | undefined) ??
-        cur;
-      const merged: Record<string, unknown> = {};
-      for (const key of fieldKeys) {
-        // Prefer this save's fields, then the base snapshot, then the live row —
-        // so a key the snapshot happens to lack still resolves.
-        merged[key] = key in input ? input[key] : key in mergeBase ? mergeBase[key] : cur[key];
+      const result = await applySaveDraft(env, cfg, g.editor, id, parsedInput.value);
+      if (!result.ok) {
+        return json(
+          { error: result.error, ...(result.violations ? { violations: result.violations } : {}) },
+          result.status,
+        );
       }
-      if (cfg.validate) {
-        try {
-          await cfg.validate(merged);
-        } catch (err) {
-          const { message, violations } = violationsOf(err);
-          return json({ error: message, ...(violations ? { violations } : {}) }, 422);
-        }
-      }
-
-      // Buffered: absorb the write in KV; flush to D1 only on the first write of
-      // a session and every bufferFlushMs, so a burst of auto-saves collapses to
-      // ~one D1 version per interval. Unbuffered: write straight to D1 as before.
-      if (kv) {
-        const now = Date.now();
-        const flushMs = cfg.bufferFlushMs ?? DEFAULT_FLUSH_MS;
-        if (shouldFlushBuffer(buffered, now, flushMs)) {
-          const version = await api.saveDraft(context, id, merged as never);
-          await writeDraftBuffer(kv, bufferKey, { data: merged, updatedAt: now, flushedAt: now });
-          return json({ version, buffered: false }, 201);
-        }
-        await writeDraftBuffer(kv, bufferKey, {
-          data: merged,
-          updatedAt: now,
-          flushedAt: buffered ? buffered.flushedAt : now,
-        });
-        return json({ buffered: true }, 200);
-      }
-
-      const version = await api.saveDraft(context, id, merged as never);
-      return json({ version }, 201);
+      return json(result.body, result.status);
     }
 
     // POST /:id/publish — promote a draft to live. `versionId` in the body, else
