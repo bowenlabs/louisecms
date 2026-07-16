@@ -7,9 +7,12 @@
 
 export {
   type ActionErrorCtor,
+  type EditorActionContext,
+  type EditorActionDeps,
   type LouiseSaveActionConfig,
+  type LouiseSettingsActionConfig,
   louiseSaveAction,
-  type SaveActionContext,
+  louiseSettingsAction,
   type SaveActionInput,
 } from "./actions.js";
 export { type CatalogLoaderConfig, defineCatalogLoader } from "./catalog.js";

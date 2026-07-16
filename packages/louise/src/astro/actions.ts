@@ -1,16 +1,19 @@
 // Copyright (c) 2026 BowenLabs. Louise Toolkit is MIT licensed.
 //
-// `louise-toolkit/astro` — the editor `save` mutation as an Astro Action (#72):
-// a typed, Zod-validated server function so a site calls `actions.louise.save(...)`
-// and gets end-to-end types + automatic input validation, instead of hand-building
-// a `fetch("/api/louise/save")` JSON body and re-parsing it server-side.
+// `louise-toolkit/astro` — the editor mutations as Astro Actions (#72): typed,
+// Zod-validated server functions so a site calls `actions.louise.save(...)` /
+// `settings(...)` and gets end-to-end types + automatic input validation, instead
+// of hand-building a `fetch("/api/louise/*")` JSON body and re-parsing it.
 //
 //   // site: src/actions/index.ts
 //   import { defineAction, ActionError } from "astro:actions";
-//   import { louiseSaveAction } from "louise-toolkit/astro";
+//   import { louiseSaveAction, louiseSettingsAction } from "louise-toolkit/astro";
 //
 //   export const server = {
-//     louise: { save: defineAction(louiseSaveAction({ collections, ActionError })) },
+//     louise: {
+//       save: defineAction(louiseSaveAction({ collections, ActionError })),
+//       settings: defineAction(louiseSettingsAction({ ...settingsConfig, ActionError })),
+//     },
 //   };
 //
 // Why a factory that returns `{ input, handler }` instead of a ready `defineAction`:
@@ -20,16 +23,18 @@
 // ingredients and the SITE assembles `defineAction`, and it takes the `ActionError`
 // class by injection so the handler can still throw framework-correct 400/401/404.
 //
-// CSRF: Astro enforces same-origin on Action POSTs by default, so this ports only
+// CSRF: Astro enforces same-origin on Action POSTs by default, so these port only
 // the AUTH guard (a `locals.editor` check). The store logic itself is shared with
-// the raw `saveRoute` via `applyFieldSave`, so nothing is parsed or written twice.
+// the raw routes (`applyFieldSave`, `applySettingsPatch`), so nothing is parsed or
+// written twice.
 
 import { z } from "astro/zod";
 import { applyFieldSave, type SaveCollectionConfig } from "../core/editor/save.js";
+import { applySettingsPatch, type SettingsPatchConfig } from "../core/editor/settings.js";
 import type { EditorRouteEnv } from "../core/editor/shared.js";
 import { sanitizeRichHtml } from "../core/security/index.js";
 
-/** The subset of Astro's `ActionError` codes the `save` handler emits. */
+/** The subset of Astro's `ActionError` codes the editor handlers emit. */
 type ActionErrorCode =
   | "BAD_REQUEST"
   | "UNAUTHORIZED"
@@ -37,20 +42,34 @@ type ActionErrorCode =
   | "NOT_FOUND"
   | "INTERNAL_SERVER_ERROR";
 
-/** The shape of Astro's `ActionError` constructor the handler depends on —
+/** The shape of Astro's `ActionError` constructor the handlers depend on —
  *  injected (see file header) so the toolkit needn't import `astro:actions`. */
 export interface ActionErrorCtor {
   new (opts: { code: ActionErrorCode; message?: string }): Error;
 }
 
-/** The slice of an Astro `ActionAPIContext` the `save` handler reads: the resolved
+/** The slice of an Astro `ActionAPIContext` the editor handlers read: the resolved
  *  editor and the Cloudflare bindings, both off `locals`. A real context (which
  *  carries much more) structurally satisfies this. */
-export interface SaveActionContext {
+export interface EditorActionContext {
   locals: {
     editor?: unknown;
     runtime?: { env: unknown };
   };
+}
+
+/** The dependencies every editor Action shares: the injected `ActionError` plus
+ *  optional readers for the editor session and the Worker `env`, both defaulting
+ *  to their `locals` location. */
+export interface EditorActionDeps<Env extends EditorRouteEnv = EditorRouteEnv> {
+  /** Astro's `ActionError` class, injected (see file header). */
+  ActionError: ActionErrorCtor;
+  /** Resolve the editor session from the Action context. Default: `locals.editor`
+   *  (set by `createLouiseMiddleware`). A falsy result answers 401. */
+  getEditor?: (ctx: EditorActionContext) => unknown;
+  /** Resolve the Worker `env` (the D1 binding) from the Action context. Default:
+   *  `locals.runtime.env` — the Cloudflare adapter's binding location. */
+  getEnv?: (ctx: EditorActionContext) => Env;
 }
 
 /** The validated `save` input — the inline field-save body, same keys the raw
@@ -63,23 +82,20 @@ export interface SaveActionInput {
   value: unknown;
 }
 
-export interface LouiseSaveActionConfig<Env extends EditorRouteEnv = EditorRouteEnv> {
+export interface LouiseSaveActionConfig<
+  Env extends EditorRouteEnv = EditorRouteEnv,
+> extends EditorActionDeps<Env> {
   /** Editable collections keyed by the client's `collection` slug — the same
-   *  shape the raw {@link import("../core/editor/save.js").saveRoute} takes. */
+   *  shape the raw `saveRoute` takes. */
   collections: Record<string, SaveCollectionConfig>;
-  /** Astro's `ActionError` class, injected (see file header). */
-  ActionError: ActionErrorCtor;
-  /** Resolve the editor session from the Action context. Default: `locals.editor`
-   *  (set by `createLouiseMiddleware`). A falsy result answers 401. */
-  getEditor?: (ctx: SaveActionContext) => unknown;
-  /** Resolve the Worker `env` (the D1 binding) from the Action context. Default:
-   *  `locals.runtime.env` — the Cloudflare adapter's binding location. */
-  getEnv?: (ctx: SaveActionContext) => Env;
   /** Rich-HTML sanitizer; defaults to louise-toolkit/security's `sanitizeRichHtml`. */
   sanitize?: (html: string) => string;
 }
 
-/** Map an `applyFieldSave` HTTP status onto an Astro `ActionError` code. */
+export interface LouiseSettingsActionConfig<Env extends EditorRouteEnv = EditorRouteEnv>
+  extends EditorActionDeps<Env>, SettingsPatchConfig {}
+
+/** Map an `apply*` HTTP status onto an Astro `ActionError` code. */
 function statusToCode(status: number): ActionErrorCode {
   if (status === 401) return "UNAUTHORIZED";
   if (status === 403) return "FORBIDDEN";
@@ -88,21 +104,48 @@ function statusToCode(status: number): ActionErrorCode {
   return "BAD_REQUEST";
 }
 
+type ResolvedDeps<Env extends EditorRouteEnv> = {
+  ActionError: ActionErrorCtor;
+  getEditor: (ctx: EditorActionContext) => unknown;
+  getEnv: (ctx: EditorActionContext) => Env;
+};
+
+/** Resolve an editor Action's deps, filling the default `locals` readers. */
+function resolveDeps<Env extends EditorRouteEnv>(deps: EditorActionDeps<Env>): ResolvedDeps<Env> {
+  return {
+    ActionError: deps.ActionError,
+    getEditor: deps.getEditor ?? ((ctx: EditorActionContext) => ctx.locals.editor),
+    getEnv: deps.getEnv ?? ((ctx: EditorActionContext) => ctx.locals.runtime?.env as Env),
+  };
+}
+
+/** Require the (middleware-resolved) editor session — a missing one is a 401.
+ *  CSRF/same-origin is Astro's default for Action POSTs, so only auth is ported. */
+function requireEditor(resolved: ResolvedDeps<EditorRouteEnv>, ctx: EditorActionContext): void {
+  if (!resolved.getEditor(ctx)) {
+    throw new resolved.ActionError({ code: "UNAUTHORIZED", message: "Editor session required" });
+  }
+}
+
+/** Throw the injected `ActionError` for an `apply*` failure — `never`, so a
+ *  `if (!result.ok) throwActionError(...)` narrows the result to its ok branch. */
+function throwActionError(ActionError: ActionErrorCtor, status: number, error: string): never {
+  throw new ActionError({ code: statusToCode(status), message: error });
+}
+
 /**
- * Build the `{ input, handler }` config for the editor `save` Action. The site
- * drops the result into `defineAction` (see file header). The `input` schema is
- * validated by Astro *before* the handler runs — replacing the raw route's manual
- * `request.json()` + `standardValidate` — and the handler shares the raw route's
- * store path via {@link applyFieldSave}, so a field is validated once and written
- * in exactly one place.
+ * Build the `{ input, handler }` config for the editor `save` Action (the inline
+ * field-save). The site drops the result into `defineAction` (see file header).
+ * The `input` schema is validated by Astro *before* the handler runs — replacing
+ * the raw route's manual `request.json()` + `standardValidate` — and the handler
+ * shares the raw route's store path via {@link applyFieldSave}, so a field is
+ * validated once and written in exactly one place.
  */
 export function louiseSaveAction<Env extends EditorRouteEnv = EditorRouteEnv>(
   config: LouiseSaveActionConfig<Env>,
 ) {
-  const { ActionError } = config;
+  const resolved = resolveDeps(config);
   const sanitize = config.sanitize ?? sanitizeRichHtml;
-  const getEditor = config.getEditor ?? ((ctx: SaveActionContext) => ctx.locals.editor);
-  const getEnv = config.getEnv ?? ((ctx: SaveActionContext) => ctx.locals.runtime?.env as Env);
 
   return {
     input: z.object({
@@ -111,17 +154,48 @@ export function louiseSaveAction<Env extends EditorRouteEnv = EditorRouteEnv>(
       field: z.string(),
       value: z.unknown(),
     }),
-    handler: async (input: SaveActionInput, context: SaveActionContext): Promise<{ ok: true }> => {
-      // Auth: the middleware already resolved the session onto locals; a missing
-      // one is a 401 (CSRF/same-origin is Astro's default for Action POSTs).
-      if (!getEditor(context)) {
-        throw new ActionError({ code: "UNAUTHORIZED", message: "Editor session required" });
-      }
-      const result = await applyFieldSave(getEnv(context), config.collections, sanitize, input);
-      if (!result.ok) {
-        throw new ActionError({ code: statusToCode(result.status), message: result.error });
-      }
+    handler: async (
+      input: SaveActionInput,
+      context: EditorActionContext,
+    ): Promise<{ ok: true }> => {
+      requireEditor(resolved, context);
+      const result = await applyFieldSave(
+        resolved.getEnv(context),
+        config.collections,
+        sanitize,
+        input,
+      );
+      if (!result.ok) throwActionError(resolved.ActionError, result.status, result.error);
       return { ok: true };
+    },
+  };
+}
+
+/**
+ * Build the `{ input, handler }` config for the editor `settings` Action (the
+ * structured settings-panel patch). Mirrors {@link louiseSaveAction}: Astro
+ * validates the patch object as `input`, and the handler shares the raw
+ * `settingsRoute` store path via {@link applySettingsPatch} (media-strictness on
+ * image keys, base-vs-`custom` partition, singleton write). Returns the `ignored`
+ * (non-allowlisted) keys so the caller can surface what was dropped.
+ */
+export function louiseSettingsAction<Env extends EditorRouteEnv = EditorRouteEnv>(
+  config: LouiseSettingsActionConfig<Env>,
+) {
+  const resolved = resolveDeps(config);
+
+  return {
+    // A settings patch is an arbitrary object of allowlisted keys; the allowlist
+    // (base columns + `custom` keys) is enforced in `applySettingsPatch`.
+    input: z.record(z.string(), z.unknown()),
+    handler: async (
+      input: Record<string, unknown>,
+      context: EditorActionContext,
+    ): Promise<{ ok: true; ignored: string[] }> => {
+      requireEditor(resolved, context);
+      const result = await applySettingsPatch(resolved.getEnv(context), config, input);
+      if (!result.ok) throwActionError(resolved.ActionError, result.status, result.error);
+      return { ok: true, ignored: result.ignored };
     },
   };
 }

@@ -112,6 +112,74 @@ function flatten(row: Record<string, unknown>): Record<string, unknown> {
   return { ...rest, ...extra };
 }
 
+/** The store-side settings config — the subset of {@link SettingsRouteConfig} the
+ *  {@link applySettingsPatch} write needs (no transport/auth concern). */
+export interface SettingsPatchConfig {
+  table: SQLiteTable;
+  columns: string[];
+  customKeys?: string[];
+  imageKeys?: string[];
+  mediaBase?: string;
+  id?: number;
+}
+
+export type SettingsPatchResult =
+  | { ok: true; ignored: string[] }
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      ignored?: string[];
+      violations?: ValidationViolation[];
+    };
+
+/**
+ * Apply an already-validated settings patch to the singleton row: enforce
+ * media-strictness on image keys, split the patch into base-column vs `custom`
+ * updates ({@link partitionSettingsPatch}), and write. Carries no transport/parse
+ * concern — the raw {@link settingsRoute} (POST/PATCH) and the Astro `settings`
+ * Action each validate their own input, then converge here, so the merge + write
+ * lives in exactly one place rather than being duplicated per adapter.
+ */
+export async function applySettingsPatch<Env extends EditorRouteEnv = EditorRouteEnv>(
+  env: Env,
+  config: SettingsPatchConfig,
+  patch: Record<string, unknown>,
+): Promise<SettingsPatchResult> {
+  const table = config.table;
+  const rowId = config.id ?? 1;
+  const pkCol = getTableConfig(table).columns.find((c) => c.primary) as SQLiteColumn | undefined;
+  const database = db(env.DB);
+  const rows = (await database.select().from(table).limit(1)) as Record<string, unknown>[];
+  const current = rows[0];
+  if (!current) return { ok: false, status: 404, error: "No settings row" };
+
+  // Media-strictness: image settings (logo, favicon, share image…) must point at
+  // a media-library URL — an external hotlink is rejected before write.
+  if (config.imageKeys && config.imageKeys.length > 0 && config.mediaBase) {
+    const violations = validateSettingsImages(patch, config.imageKeys, config.mediaBase);
+    if (violations.length > 0) {
+      return { ok: false, status: 422, error: "Invalid image field(s)", violations };
+    }
+  }
+
+  const part = partitionSettingsPatch(patch, config.columns, config.customKeys ?? []);
+  const updates: Record<string, unknown> = { ...part.columnUpdates };
+  if (Object.keys(part.customUpdates).length > 0) {
+    const prevCustom = (current.custom as Record<string, unknown> | null) ?? {};
+    updates.custom = { ...prevCustom, ...part.customUpdates };
+  }
+  if ("updatedAt" in current) updates.updatedAt = new Date();
+  if (Object.keys(updates).length === 0) {
+    return { ok: false, status: 400, error: "Nothing to update", ignored: part.ignored };
+  }
+
+  const setBuilder = database.update(table).set(updates as never);
+  await (pkCol ? setBuilder.where(eq(pkCol, rowId)) : setBuilder);
+
+  return { ok: true, ignored: part.ignored };
+}
+
 /**
  * Build the `settings` editor route. GET (read) returns the merged singleton
  * config; POST/PATCH (mutation, same-origin-guarded) patches the allowlisted
@@ -122,9 +190,7 @@ export function settingsRoute<Env extends EditorRouteEnv = EditorRouteEnv>(
   config: SettingsRouteConfig<Env>,
 ): WorkerRoute<Env> {
   const path = config.path ?? "/api/louise/settings";
-  const rowId = config.id ?? 1;
   const table = config.table;
-  const pkCol = getTableConfig(table).columns.find((c) => c.primary) as SQLiteColumn | undefined;
 
   return async (request, env) => {
     if (!matchPath(request, path)) return undefined;
@@ -137,43 +203,22 @@ export function settingsRoute<Env extends EditorRouteEnv = EditorRouteEnv>(
     const g = await guardEditor(request, env, config.resolveEditor, !isRead);
     if ("response" in g) return g.response;
 
-    const database = db(env.DB);
-    const rows = (await database.select().from(table).limit(1)) as Record<string, unknown>[];
-    const current = rows[0];
-
     if (isRead) {
+      const rows = (await db(env.DB).select().from(table).limit(1)) as Record<string, unknown>[];
+      const current = rows[0];
       return json({ settings: current ? flatten(current) : {} });
     }
 
-    if (!current) return json({ error: "No settings row" }, 404);
-
     const parsedPatch = await standardValidate(s.record(), await request.json().catch(() => null));
     if (!parsedPatch.ok) return json({ error: "Invalid JSON" }, 400);
-    const patch = parsedPatch.value;
 
-    // Media-strictness: image settings (logo, favicon, share image…) must point
-    // at a media-library URL — an external hotlink is rejected before write.
-    if (config.imageKeys && config.imageKeys.length > 0 && config.mediaBase) {
-      const violations = validateSettingsImages(patch, config.imageKeys, config.mediaBase);
-      if (violations.length > 0) {
-        return json({ error: "Invalid image field(s)", violations }, 422);
-      }
+    const result = await applySettingsPatch(env, config, parsedPatch.value);
+    if (!result.ok) {
+      const body: Record<string, unknown> = { error: result.error };
+      if (result.violations) body.violations = result.violations;
+      if (result.ignored) body.ignored = result.ignored;
+      return json(body, result.status);
     }
-
-    const part = partitionSettingsPatch(patch, config.columns, config.customKeys ?? []);
-    const updates: Record<string, unknown> = { ...part.columnUpdates };
-    if (Object.keys(part.customUpdates).length > 0) {
-      const prevCustom = (current.custom as Record<string, unknown> | null) ?? {};
-      updates.custom = { ...prevCustom, ...part.customUpdates };
-    }
-    if ("updatedAt" in current) updates.updatedAt = new Date();
-    if (Object.keys(updates).length === 0) {
-      return json({ error: "Nothing to update", ignored: part.ignored }, 400);
-    }
-
-    const setBuilder = database.update(table).set(updates as never);
-    await (pkCol ? setBuilder.where(eq(pkCol, rowId)) : setBuilder);
-
-    return json({ ok: true, ignored: part.ignored });
+    return json({ ok: true, ignored: result.ignored });
   };
 }

@@ -1,6 +1,11 @@
+import { getTableConfig } from "drizzle-orm/sqlite-core";
 import { describe, expect, it } from "vitest";
-import { louiseSaveAction, type SaveActionContext } from "../../src/astro/actions.js";
-import { pages } from "../../src/core/db/index.js";
+import {
+  type EditorActionContext,
+  louiseSaveAction,
+  louiseSettingsAction,
+} from "../../src/astro/actions.js";
+import { pages, siteSettings } from "../../src/core/db/index.js";
 
 // Fake D1 mirroring test/core/editor.test.ts's makeD1, plus `.raw()`: drizzle's
 // `update().set().where().returning()` reads its rows via `stmt.bind(...).raw()`
@@ -54,7 +59,7 @@ const action = louiseSaveAction({ collections, ActionError: FakeActionError });
 
 // A minimal Astro Action context: the middleware-resolved editor + CF bindings,
 // both off `locals` (the handler's default `getEditor`/`getEnv` read here).
-const makeCtx = (db: D1Database, ed: unknown = editor): SaveActionContext => ({
+const makeCtx = (db: D1Database, ed: unknown = editor): EditorActionContext => ({
   locals: { editor: ed, runtime: { env: { DB: db } } },
 });
 
@@ -122,5 +127,41 @@ describe("louiseSaveAction", () => {
     await expect(
       action.handler({ collection: "pages", key: "999", field: "title", value: "x" }, makeCtx(db)),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+});
+
+const settingsAction = louiseSettingsAction({
+  table: siteSettings,
+  columns: ["siteName"],
+  customKeys: ["heroHeadline"],
+  ActionError: FakeActionError,
+});
+
+// One all-null settings row: the singleton read goes through drizzle's `.raw()`,
+// and drizzle skips decoding for null cells, so an all-null array of the right
+// length decodes to a row of nulls regardless of column types. `[]` = no row.
+const settingsRow = [new Array(getTableConfig(siteSettings).columns.length).fill(null)];
+
+describe("louiseSettingsAction", () => {
+  it("patches allowlisted keys and reports the ignored ones", async () => {
+    const { db, calls } = makeD1(() => settingsRow);
+    const out = await settingsAction.handler({ siteName: "Acme", bogus: "x" }, makeCtx(db));
+    expect(out).toEqual({ ok: true, ignored: ["bogus"] });
+    expect(calls.some((c) => /update/i.test(c.sql))).toBe(true);
+  });
+
+  it("throws UNAUTHORIZED without an editor, and never touches D1", async () => {
+    const { db, calls } = makeD1(() => settingsRow);
+    await expect(
+      settingsAction.handler({ siteName: "Acme" }, makeCtx(db, null)),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("throws NOT_FOUND when there is no settings row", async () => {
+    const { db } = makeD1(() => []);
+    await expect(settingsAction.handler({ siteName: "Acme" }, makeCtx(db))).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
   });
 });
