@@ -1,20 +1,50 @@
 // Copyright (c) 2026 BowenLabs. Louise Toolkit is MIT licensed.
 //
-// louise-toolkit/editor — full-text search for a collection with a `search` config.
+// louise-toolkit/editor — search for a collection with a `search` config.
 // Exposes the Local API's FTS5-backed `search()` (and a one-shot `reindex`) over
-// HTTP:
+// HTTP, and — when a Vectorize index + Workers AI runner are wired (#86) — blends
+// in a semantic layer so a query matches intent, not just tokens:
 //   GET  /api/louise/pages/search?q=…&limit=…   ranked matches (published rows)
-//   POST /api/louise/pages/reindex               rebuild the index from the table
+//   POST /api/louise/pages/reindex               rebuild the FTS index from the table
+//
+// The semantic layer is OPTIONAL and DEGRADES GRACEFULLY: absent the `vector`
+// deps (or on any embed/query error) the route is exactly the FTS-only behavior
+// it always was. When present, keyword and semantic result lists are fused with
+// Reciprocal Rank Fusion (RRF) — a rank-only merge that needs no comparable
+// scores between FTS `rank` and cosine similarity.
 //
 // Like versionsRoute, MOUNT THIS BEFORE pagesRoute — `search`/`reindex` are
 // non-integer path segments that pagesRoute's `/:id` matcher would else 400 on.
 
 import type { SQLiteTable } from "drizzle-orm/sqlite-core";
+import {
+  type AiGatewayOptions,
+  type AiRunner,
+  semanticSearch,
+  type VectorIndex,
+} from "../ai/index.js";
 import { createLocalApi } from "../content/localApi.js";
 import type { CollectionConfig } from "../content/types.js";
 import { db } from "../db/index.js";
 import type { WorkerRoute } from "../worker/index.js";
 import { type EditorRouteEnv, guardEditor, json, type ResolveEditor } from "./shared.js";
+
+/** Optional semantic-search deps for {@link SearchRouteConfig}. Supply both a
+ *  Vectorize index and a Workers AI runner (typically `(env) => env.VECTORIZE`
+ *  and `(env) => env.AI`); return `undefined` from either — the binding isn't
+ *  provisioned — and the route runs FTS-only, no error surfaced. */
+export interface SearchVectorConfig<Env extends EditorRouteEnv = EditorRouteEnv> {
+  /** The Vectorize index holding this collection's embedded content. */
+  index: (env: Env) => VectorIndex | undefined;
+  /** The Workers AI runner used to embed the query. */
+  ai: (env: Env) => AiRunner | undefined;
+  /** Embedding model id — MUST match the model the index was built with. */
+  model?: string;
+  /** Route the query embedding through AI Gateway (#87) — caching, cost caps. */
+  gateway?: (env: Env) => AiGatewayOptions | undefined;
+  /** How many nearest neighbours to pull before fusing. Default 20. */
+  topK?: number;
+}
 
 export interface SearchRouteConfig<Env extends EditorRouteEnv = EditorRouteEnv> {
   /** The searchable collection's main table. */
@@ -25,6 +55,8 @@ export interface SearchRouteConfig<Env extends EditorRouteEnv = EditorRouteEnv> 
   resolveEditor: ResolveEditor<Env>;
   /** Mount path (the collection base). Default `/api/louise/pages`. */
   path?: string;
+  /** Optional semantic layer (#86). Omit for FTS-only search. */
+  vector?: SearchVectorConfig<Env>;
 }
 
 /**
@@ -55,6 +87,40 @@ export function parseSearchLimit(raw: string | null): number {
   return Number.isFinite(n) && n > 0 ? Math.min(n, SEARCH_LIMIT_MAX) : SEARCH_LIMIT_DEFAULT;
 }
 
+/** RRF's rank-damping constant. 60 is the canonical default (Cormack et al.);
+ *  larger flattens the contribution of top ranks, smaller sharpens it. */
+export const RRF_K = 60;
+
+/**
+ * Fuse two ranked id lists with Reciprocal Rank Fusion: an id's score is the sum
+ * of `1 / (RRF_K + rank)` (1-indexed rank) over each list it appears in, so an id
+ * ranked highly in *either* list surfaces and one ranked in *both* is boosted —
+ * without the two lists' native scores needing to be comparable. Returns ids
+ * ordered best-first. `keyword` and `semantic` are each already best-first.
+ */
+export function fuseRankings(keyword: number[], semantic: number[]): number[] {
+  const scores = new Map<number, number>();
+  const add = (ids: number[]) => {
+    ids.forEach((id, i) => {
+      scores.set(id, (scores.get(id) ?? 0) + 1 / (RRF_K + i + 1));
+    });
+  };
+  add(keyword);
+  add(semantic);
+  return [...scores.keys()].sort((a, b) => {
+    const byScore = (scores.get(b) ?? 0) - (scores.get(a) ?? 0);
+    // Deterministic tiebreak so equal-score ids order stably (by id).
+    return byScore !== 0 ? byScore : a - b;
+  });
+}
+
+/** A row's numeric id, or `null` when a result row lacks one (never expected for
+ *  a searchable collection — the FTS rowid IS the id — but typed defensively). */
+function rowId(row: unknown): number | null {
+  const id = (row as { id?: unknown }).id;
+  return typeof id === "number" ? id : null;
+}
+
 /**
  * Build the search route for a collection with a `search` config. Returns
  * `undefined` for any path it doesn't own so `composeWorker` falls through.
@@ -80,7 +146,7 @@ export function searchRoute<Env extends EditorRouteEnv = EditorRouteEnv>(
       if (!q) return json({ results: [] });
       const limit = parseSearchLimit(url.searchParams.get("limit"));
       try {
-        const results = await api.search(context, toFtsQuery(q), { limit });
+        const results = await runSearch(api, context, cfg, env, q, limit);
         return json({ results });
       } catch (err) {
         // A malformed FTS query (or a missing index) shouldn't 500 a search box.
@@ -96,4 +162,63 @@ export function searchRoute<Env extends EditorRouteEnv = EditorRouteEnv>(
 
     return json({ error: "Method not allowed" }, 405);
   };
+}
+
+/**
+ * Run the search: always FTS; when a semantic layer is configured and its
+ * bindings resolve, also embed+query Vectorize and RRF-fuse the two lists,
+ * hydrating any semantic-only hit into a full row. Semantic failures collapse to
+ * `[]` inside {@link semanticSearch}, so this reduces to the FTS result set
+ * unchanged — nothing here can make configured search worse than FTS-only.
+ */
+async function runSearch<Env extends EditorRouteEnv>(
+  api: ReturnType<typeof createLocalApi>,
+  context: { session: unknown },
+  cfg: SearchRouteConfig<Env>,
+  env: Env,
+  q: string,
+  limit: number,
+): Promise<unknown[]> {
+  // FTS pulls `limit` rows; semantic pulls topK — fusing can reorder within the
+  // combined pool, so query the keyword side at full `limit`.
+  const ftsRows = await api.search(context, toFtsQuery(q), { limit });
+
+  const index = cfg.vector?.index(env);
+  const runner = cfg.vector?.ai(env);
+  if (!cfg.vector || !index || !runner) return ftsRows; // FTS-only
+
+  const semantic = await semanticSearch(index, runner, cfg.config.slug, q, {
+    topK: cfg.vector.topK ?? SEARCH_LIMIT_DEFAULT,
+    model: cfg.vector.model,
+    gateway: cfg.vector.gateway?.(env),
+  });
+  if (semantic.length === 0) return ftsRows; // no semantic signal → keyword order
+
+  // Index the keyword rows by id; hydrate semantic-only ids in one batch of
+  // reads (a vector may point at a since-unpublished/deleted row → drop it).
+  const byId = new Map<number, unknown>();
+  const ftsIds: number[] = [];
+  for (const row of ftsRows) {
+    const id = rowId(row);
+    if (id !== null) {
+      byId.set(id, row);
+      ftsIds.push(id);
+    }
+  }
+  const missing = semantic.map((m) => m.id).filter((id) => !byId.has(id));
+  const hydrated = await Promise.all(
+    missing.map((id) => api.findByID(context, id).catch(() => null)),
+  );
+  for (const row of hydrated) {
+    if (!row) continue;
+    const id = rowId(row);
+    if (id !== null) byId.set(id, row);
+  }
+
+  const semanticIds = semantic.map((m) => m.id).filter((id) => byId.has(id));
+  const fused = fuseRankings(ftsIds, semanticIds);
+  return fused
+    .map((id) => byId.get(id))
+    .filter((row) => row !== undefined)
+    .slice(0, limit);
 }

@@ -23,6 +23,12 @@ type CloudflareEnv = {
   // Workers AI (#75): alt text on upload + the rewrite/SEO assists. Binding from
   // wrangler.jsonc `ai`; the `core/ai` helpers degrade to null when a model errs.
   AI: Ai;
+  // Vectorize (#86): semantic search alongside the FTS5 index. Optional — absent
+  // the binding, embed-on-publish (workflows/publish.ts) and the searchRoute
+  // semantic layer cleanly no-op and search stays FTS-only. The wrangler.jsonc
+  // `vectorize` binding is commented until the index is provisioned (an unbound-
+  // but-referenced index fails the deploy); see the note there to activate.
+  VECTORIZE?: VectorizeIndex;
   // Per-page live editing session Durable Object (#71): the realtime WebSocket
   // route (worker.ts `realtimeRoute`) forwards upgrades here. Optional — the
   // route 503s (realtime cleanly off) when the binding is absent. Class exported

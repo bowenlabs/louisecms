@@ -7,7 +7,7 @@ import {
 } from "../../src/core/content/index.js";
 import { pages } from "../../src/core/db/index.js";
 import { searchRoute } from "../../src/core/editor/index.js";
-import { parseSearchLimit, SEARCH_LIMIT_MAX } from "../../src/core/editor/search.js";
+import { fuseRankings, parseSearchLimit, SEARCH_LIMIT_MAX } from "../../src/core/editor/search.js";
 
 const config = defineCollection({
   slug: "pages",
@@ -149,6 +149,54 @@ describe("searchRoute — routing", () => {
       ctx,
     );
     expect(res?.status).toBe(405);
+  });
+
+  it("degrades to FTS-only when the vector bindings are absent (no throw)", async () => {
+    // A route configured with a semantic layer whose accessors return undefined
+    // (index/AI not provisioned) must behave exactly like FTS-only search.
+    const hybrid = searchRoute({
+      table: pages,
+      config,
+      resolveEditor: () => editor,
+      vector: { index: () => undefined, ai: () => undefined },
+    });
+    const res = await hybrid(req("GET", "/api/louise/pages/search?q=hello"), { DB: noopD1 }, ctx);
+    expect(res?.status).toBe(200);
+    expect(await res?.json()).toEqual({ results: [] }); // noopD1 → no FTS rows
+  });
+});
+
+// --- fuseRankings (RRF hybrid merge — #86) ---------------------------------
+
+describe("fuseRankings", () => {
+  it("preserves keyword order when there's no semantic signal", () => {
+    expect(fuseRankings([3, 1, 2], [])).toEqual([3, 1, 2]);
+  });
+
+  it("returns semantic order when there's no keyword signal", () => {
+    expect(fuseRankings([], [9, 4])).toEqual([9, 4]);
+  });
+
+  it("boosts an id ranked in BOTH lists above one ranked in only one", () => {
+    // 2 appears top of both lists → highest fused score; 1 and 3 each appear once.
+    const fused = fuseRankings([1, 2], [2, 3]);
+    expect(fused[0]).toBe(2);
+    expect(fused).toContain(1);
+    expect(fused).toContain(3);
+  });
+
+  it("surfaces a strong semantic-only hit ahead of a weak keyword-only one", () => {
+    // id 5 is rank 1 semantically; id 1 is rank 3 (last) on keyword only.
+    const fused = fuseRankings([7, 8, 1], [5, 6]);
+    expect(fused.indexOf(5)).toBeLessThan(fused.indexOf(1));
+  });
+
+  it("orders equal-score ids deterministically (by id) — no dupes", () => {
+    // Disjoint lists, same rank position → equal RRF score; tiebreak ascending id.
+    const fused = fuseRankings([10], [4]);
+    expect(fused).toEqual([4, 10]);
+    // every id appears exactly once
+    expect(new Set(fused).size).toBe(fused.length);
   });
 });
 
