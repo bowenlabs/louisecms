@@ -127,3 +127,26 @@ describe("mountSections — auto-save (sections drafts)", () => {
     expect(calls.some((c) => c.method === "POST")).toBe(false); // no debounced draft
   });
 });
+
+describe("mountSections — native spellcheck (#142)", () => {
+  it("turns spellcheck on for multiline fields, leaves single-line labels off", () => {
+    stubFetch();
+    const el = document.createElement("div");
+    const single = document.createElement("h1");
+    single.dataset.louiseSfield = "0.title";
+    single.textContent = "Hi";
+    const multi = document.createElement("p");
+    multi.dataset.louiseSfield = "0.tagline";
+    multi.setAttribute("data-louise-multiline", "");
+    multi.textContent = "A longer, prose-y tagline";
+    el.appendChild(single);
+    el.appendChild(multi);
+    document.body.appendChild(el);
+
+    dispose = mountSections(el, { catalog: CATALOG, pageId: 1, initial: initial() });
+
+    // Single-line headline: squiggles are noise → off. Multiline prose: on.
+    expect(single.getAttribute("spellcheck")).toBe("false");
+    expect(multi.getAttribute("spellcheck")).toBe("true");
+  });
+});
