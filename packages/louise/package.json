@@ -127,6 +127,11 @@
       "import": "./dist/core/queues/index.js",
       "default": "./dist/core/queues/index.js"
     },
+    "./realtime": {
+      "types": "./dist/core/realtime/index.d.ts",
+      "import": "./dist/core/realtime/index.js",
+      "default": "./dist/core/realtime/index.js"
+    },
     "./schema": {
       "types": "./dist/core/schema/index.d.ts",
       "import": "./dist/core/schema/index.js",
