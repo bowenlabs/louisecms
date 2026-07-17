@@ -8,6 +8,8 @@
 // it's just a small singleton blob under a distinct key). The Health card stays
 // hidden until the first scan writes one (overviewHealth reads the same key).
 
+import { CF_ACCOUNT_ID, CF_API_TOKEN } from "astro:env/server";
+import { type CwvSummary, cwvSqlQuery, parseCwvRows, summarizeCwv } from "louise-toolkit/analytics";
 import { checkLinks } from "louise-toolkit/browser";
 import {
   type HealthSummary,
@@ -18,6 +20,36 @@ import {
 import { count } from "./overview.js";
 
 const SITE_ORIGIN = "https://louisetoolkit.com";
+
+/** The Analytics Engine dataset the web-vitals beacon writes to (wrangler.jsonc). */
+const CWV_DATASET = "louise_web_vitals";
+
+/**
+ * Read the p75 of each Core Web Vital over the last day from the Analytics Engine
+ * SQL API (#106). Returns `undefined` — so the badge stays "not measured yet" —
+ * when the API creds aren't set, the query fails, or there's no field data yet.
+ */
+async function queryCwv(): Promise<CwvSummary | undefined> {
+  if (!CF_ACCOUNT_ID || !CF_API_TOKEN) return undefined;
+  try {
+    const res = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/analytics_engine/sql`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${CF_API_TOKEN}` },
+        body: cwvSqlQuery(CWV_DATASET, 24),
+      },
+    );
+    if (!res.ok) return undefined;
+    const body = (await res.json()) as {
+      data?: { metric?: unknown; p75?: unknown; samples?: unknown }[];
+    };
+    const summary = summarizeCwv(parseCwvRows(body.data ?? []));
+    return summary.sampleSize > 0 ? summary : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** Media assets with no alt text (the accessibility default reused everywhere). */
 const MISSING_ALT_SQL = "SELECT COUNT(*) AS n FROM media WHERE alt IS NULL OR alt = ''";
@@ -34,12 +66,14 @@ const SEO_GAPS_SQL = `SELECT COUNT(*) AS n FROM pages
  * Returns the summary (handy for logging).
  */
 export async function runHealthScan(env: CloudflareEnv): Promise<HealthSummary> {
-  const [brokenLinks, missingAlt, seoGaps] = await Promise.all([
+  const [brokenLinks, missingAlt, seoGaps, cwv] = await Promise.all([
     checkLinks({ base: SITE_ORIGIN, paths: ["/"] }),
     count(env.DB, MISSING_ALT_SQL),
     count(env.DB, SEO_GAPS_SQL),
+    queryCwv(),
   ]);
   const summary = summarizeHealth({ brokenLinks, missingAlt, seoGaps });
+  if (cwv) summary.cwv = cwv;
   await writeHealthSummary(env.RL, summary);
   return summary;
 }

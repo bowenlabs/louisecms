@@ -57,6 +57,10 @@
   // fractions of a cent per call. Opt-in per feature (the media route's `altText`
   // accessor); absent → those assists degrade to null, never blocking a save.
   "ai": { "binding": "AI" },
+  // Analytics Engine (#106 CWV): the real-user web-vitals dataset the beacon
+  // writes to (vitalsRoute) and the health cron reads p75 from. Datasets are
+  // created on first write — no pre-provisioning — so this binds safely.
+  "analytics_engine_datasets": [{ "binding": "ANALYTICS", "dataset": "louise_web_vitals" }],
   // Vectorize (#86): semantic search alongside the FTS5 keyword index. OPTIONAL
   // and left COMMENTED until provisioned — a referenced-but-unbound index fails
   // the deploy (same footgun as Queues). To activate: create an index whose

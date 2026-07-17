@@ -23,6 +23,9 @@ type CloudflareEnv = {
   // Workers AI (#75): alt text on upload + the rewrite/SEO assists. Binding from
   // wrangler.jsonc `ai`; the `core/ai` helpers degrade to null when a model errs.
   AI: Ai;
+  // Analytics Engine (#106 CWV): the real-user web-vitals RUM dataset. Beacons
+  // write via vitalsRoute; the health cron reads p75 back over the AE SQL API.
+  ANALYTICS: AnalyticsEngineDataset;
   // Vectorize (#86): semantic search alongside the FTS5 index. Optional — absent
   // the binding, embed-on-publish (workflows/publish.ts) and the searchRoute
   // semantic layer cleanly no-op and search stays FTS-only. The wrangler.jsonc

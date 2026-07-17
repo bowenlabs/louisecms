@@ -18,6 +18,7 @@ import "../styles/louise.css";
 import "../styles/landing.css";
 import monogram from "../assets/louise-monogram.svg?raw";
 import LouiseEditIsland from "../components/LouiseEditIsland.astro";
+import Vitals from "../components/Vitals.astro";
 import Sections from "../components/Sections.astro";
 import SectionsMount from "../components/SectionsMount.astro";
 import { publishedPageCache } from "../lib/louise/cache.js";
@@ -156,5 +157,6 @@ const FOOTER_NAV = [
 
     <SectionsMount />
     <LouiseEditIsland server:defer />
+    <Vitals />
   </body>
 </html>

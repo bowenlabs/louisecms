@@ -2,6 +2,7 @@
 import { env } from "cloudflare:workers";
 import { db } from "louise-toolkit/db";
 import { siteSettings } from "../schema.js";
+import Vitals from "./Vitals.astro";
 
 // The shared, site-wide chrome — header/nav + footer — rendered around every
 // page's editable canvas. It's sourced entirely from `site_settings` (siteName,
@@ -45,3 +46,6 @@ const year = new Date().getFullYear();
     </nav>
   </div>
 </footer>
+
+<Vitals />
+
