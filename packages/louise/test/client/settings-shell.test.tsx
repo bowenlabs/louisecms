@@ -376,6 +376,49 @@ describe("PagesPanel — list + built-in pages", () => {
     expect(host.textContent).toContain("Built-in pages");
     expect(host.textContent).toContain("Home");
   });
+
+  it("opens page settings and saves via the footer (dirty-gated) + PATCHes the row", async () => {
+    const fetchMock = stubFetch((url, method) => {
+      if (url.endsWith("/api/louise/pages") && method === "GET") {
+        return jsonResponse({ pages: [{ id: 1, title: "Terms", slug: "terms", status: "draft" }] });
+      }
+      if (url.endsWith("/api/louise/pages/1") && method === "GET") {
+        return jsonResponse({
+          page: { id: 1, title: "Terms", slug: "terms", status: "draft", noindex: false },
+        });
+      }
+      return jsonResponse({ ok: true });
+    });
+    mountPanel(() => <PagesPanel />);
+
+    // Open the per-page settings form from the list's gear.
+    await vi.waitFor(() => expect(host.textContent).toContain("Terms"));
+    host.querySelector<HTMLButtonElement>('button[aria-label="Page settings"]')!.click();
+
+    // Save + Delete render in the footer; Save is dirty-gated until a field edits.
+    await vi.waitFor(() =>
+      expect(host.querySelector('.louise-drawer-foot [data-action="delete"]')).not.toBeNull(),
+    );
+    await vi.waitFor(() =>
+      expect(host.querySelector<HTMLInputElement>("#pg-title")?.value).toBe("Terms"),
+    );
+    expect(footSave()!.disabled).toBe(true);
+
+    const title = host.querySelector<HTMLInputElement>("#pg-title")!;
+    title.value = "Terms of Service";
+    title.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(footSave()!.disabled).toBe(false);
+    footSave()!.click();
+
+    await vi.waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        (c) => (c[1]?.method ?? "GET").toUpperCase() === "PATCH",
+      );
+      expect(patch).toBeTruthy();
+      expect(String(patch![0])).toContain("/api/louise/pages/1");
+      expect(JSON.parse(String(patch![1]!.body)).title).toBe("Terms of Service");
+    });
+  });
 });
 
 describe("MediaPanel — list", () => {
@@ -392,6 +435,72 @@ describe("MediaPanel — list", () => {
 
     await vi.waitFor(() => expect(host.textContent).toContain("photo.jpg"));
     expect(host.textContent).toContain("2 KB");
+  });
+
+  it("edits an asset's alt via the footer (dirty-gated) and PATCHes the media route", async () => {
+    const fetchMock = stubFetch((url, method) => {
+      if (url.endsWith("/api/louise/media") && method === "GET") {
+        return jsonResponse({ media: [{ key: "web/a.jpg", url: "https://cdn/a.jpg" }] });
+      }
+      return jsonResponse({ ok: true });
+    });
+    mountPanel(() => <MediaPanel />);
+
+    await vi.waitFor(() => expect(host.textContent).toContain("a.jpg"));
+    host.querySelector<HTMLButtonElement>('button[aria-label="Edit alt text"]')!.click();
+
+    // Save + Cancel land in the footer; Save is dirty-gated.
+    await vi.waitFor(() =>
+      expect(host.querySelector('.louise-drawer-foot [data-action="cancel"]')).not.toBeNull(),
+    );
+    expect(footSave()!.disabled).toBe(true);
+
+    const altInput = host.querySelector<HTMLInputElement>(".louise-media-edit .louise-input")!;
+    altInput.value = "A red door";
+    altInput.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(footSave()!.disabled).toBe(false);
+    footSave()!.click();
+
+    await vi.waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        (c) => (c[1]?.method ?? "GET").toUpperCase() === "PATCH",
+      );
+      expect(patch).toBeTruthy();
+      const body = JSON.parse(String(patch![1]!.body));
+      expect(body.key).toBe("web/a.jpg");
+      expect(body.alt).toBe("A red door");
+    });
+  });
+
+  it("keeps a single open editor — opening one asset closes another's footer editor", async () => {
+    stubFetch((url, method) => {
+      if (url.endsWith("/api/louise/media") && method === "GET") {
+        return jsonResponse({
+          media: [
+            { key: "web/a.jpg", url: "https://cdn/a.jpg" },
+            { key: "web/b.jpg", url: "https://cdn/b.jpg" },
+          ],
+        });
+      }
+      return jsonResponse({ ok: true });
+    });
+    mountPanel(() => <MediaPanel />);
+
+    await vi.waitFor(() => expect(host.textContent).toContain("b.jpg"));
+    const altButtons = () =>
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button[aria-label="Edit alt text"]'));
+    expect(altButtons().length).toBe(2);
+
+    // Open the first asset's editor → one editor mounted, and that card's own Alt
+    // button is replaced by the editor (so only the other card's remains).
+    altButtons()[0]!.click();
+    await vi.waitFor(() => expect(host.querySelectorAll(".louise-media-edit").length).toBe(1));
+    expect(altButtons().length).toBe(1);
+
+    // Opening the other closes the first — still exactly one editor, one footer.
+    altButtons()[0]!.click();
+    expect(host.querySelectorAll(".louise-media-edit").length).toBe(1);
+    expect(host.querySelectorAll('.louise-drawer-foot [data-action="save"]').length).toBe(1);
   });
 });
 

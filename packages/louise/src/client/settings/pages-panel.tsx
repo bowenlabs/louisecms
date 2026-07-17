@@ -12,11 +12,12 @@
 // "Edit on page" deep link into inline edit mode.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createSignal, For, Match, Show, Switch } from "solid-js";
+import { createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import type { OgCardOptions } from "../../core/browser/og-card.js";
 import { Icon } from "../icons.jsx";
 import { MediaUrlPicker } from "./fields.jsx";
 import { OgPreview } from "./og-preview.jsx";
+import { usePanelActions } from "./panel-actions.jsx";
 import { apiSend, louiseQueryKey, louiseQueryKeys } from "./query.js";
 
 /** A code-defined route listed alongside the content pages. */
@@ -213,6 +214,7 @@ export function PagesPanel(props: {
 function PageForm(props: { page: PageRow; onDone: () => void; ogCard?: OgCardOptions }) {
   const p = props.page;
   const qc = useQueryClient();
+  const actions = usePanelActions();
   const [title, setTitle] = createSignal(p.title ?? "");
   const [slug, setSlug] = createSignal(p.slug ?? "");
   const [status, setStatus] = createSignal<PageRow["status"]>(p.status ?? "draft");
@@ -221,7 +223,15 @@ function PageForm(props: { page: PageRow; onDone: () => void; ogCard?: OgCardOpt
   const [ogImage, setOgImage] = createSignal(p.ogImage ?? "");
   const [noindex, setNoindex] = createSignal(Boolean(p.noindex));
   const [error, setError] = createSignal<string | null>(null);
-  const [saving, setSaving] = createSignal(false);
+  // The footer Save is dirty-gated. A fresh load (below) and a successful save
+  // clear it; every field edit sets it via `edited`.
+  const [dirty, setDirty] = createSignal(false);
+  const edited =
+    <T,>(set: (v: T) => void) =>
+    (v: T) => {
+      set(v);
+      setDirty(true);
+    };
 
   // Populate the settings fields from a fresh row (the cached list item may be
   // stale). The body is intentionally not read here — content lives on the canvas.
@@ -237,6 +247,7 @@ function PageForm(props: { page: PageRow; onDone: () => void; ogCard?: OgCardOpt
       setSeoDescription(row.seoDescription ?? "");
       setOgImage(row.ogImage ?? "");
       setNoindex(Boolean(row.noindex));
+      setDirty(false);
       return row;
     },
     // The editor's initialDoc isn't reactive, so the form must always mount
@@ -246,7 +257,6 @@ function PageForm(props: { page: PageRow; onDone: () => void; ogCard?: OgCardOpt
   }));
 
   const save = async () => {
-    setSaving(true);
     setError(null);
     try {
       // Settings only — the body is edited (and saved) on the page canvas, so it
@@ -260,11 +270,11 @@ function PageForm(props: { page: PageRow; onDone: () => void; ogCard?: OgCardOpt
         ogImage: ogImage(),
         noindex: noindex(),
       });
+      setDirty(false);
       props.onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn’t save");
     }
-    setSaving(false);
   };
 
   const remove = async () => {
@@ -277,6 +287,24 @@ function PageForm(props: { page: PageRow; onDone: () => void; ogCard?: OgCardOpt
       setError(err instanceof Error ? err.message : "Couldn’t delete");
     }
   };
+
+  // Page-settings Save/Delete live in the drawer footer (the deepest active view
+  // in the Pages panel), so they're always in reach while the form scrolls.
+  onMount(() =>
+    onCleanup(
+      actions.push([
+        {
+          id: "save",
+          label: "Save",
+          kind: "primary",
+          busyLabel: "Saving…",
+          disabled: () => !dirty(),
+          onClick: save,
+        },
+        { id: "delete", label: "Delete", kind: "danger", onClick: remove },
+      ]),
+    ),
+  );
 
   return (
     <div>
@@ -302,7 +330,7 @@ function PageForm(props: { page: PageRow; onDone: () => void; ogCard?: OgCardOpt
             id="pg-title"
             class="louise-input"
             value={title()}
-            onInput={(e) => setTitle(e.currentTarget.value)}
+            onInput={(e) => edited(setTitle)(e.currentTarget.value)}
           />
         </div>
         <div class="louise-field">
@@ -311,7 +339,7 @@ function PageForm(props: { page: PageRow; onDone: () => void; ogCard?: OgCardOpt
             id="pg-slug"
             class="louise-input"
             value={slug()}
-            onInput={(e) => setSlug(e.currentTarget.value)}
+            onInput={(e) => edited(setSlug)(e.currentTarget.value)}
             placeholder="about-the-studio"
           />
         </div>
@@ -324,7 +352,7 @@ function PageForm(props: { page: PageRow; onDone: () => void; ogCard?: OgCardOpt
             id="pg-status"
             class="louise-select"
             value={status()}
-            onChange={(e) => setStatus(e.currentTarget.value as PageRow["status"])}
+            onChange={(e) => edited(setStatus)(e.currentTarget.value as PageRow["status"])}
           >
             <option value="draft">Draft</option>
             <option value="published">Published</option>
@@ -336,7 +364,7 @@ function PageForm(props: { page: PageRow; onDone: () => void; ogCard?: OgCardOpt
             id="pg-noindex"
             class="louise-select"
             value={noindex() ? "noindex" : "index"}
-            onChange={(e) => setNoindex(e.currentTarget.value === "noindex")}
+            onChange={(e) => edited(setNoindex)(e.currentTarget.value === "noindex")}
           >
             <option value="index">Indexable</option>
             <option value="noindex">Hidden (noindex)</option>
@@ -351,7 +379,7 @@ function PageForm(props: { page: PageRow; onDone: () => void; ogCard?: OgCardOpt
             id="pg-seo-title"
             class="louise-input"
             value={seoTitle()}
-            onInput={(e) => setSeoTitle(e.currentTarget.value)}
+            onInput={(e) => edited(setSeoTitle)(e.currentTarget.value)}
           />
         </div>
         <div class="louise-field">
@@ -360,7 +388,7 @@ function PageForm(props: { page: PageRow; onDone: () => void; ogCard?: OgCardOpt
             id="pg-seo-desc"
             class="louise-input"
             value={seoDescription()}
-            onInput={(e) => setSeoDescription(e.currentTarget.value)}
+            onInput={(e) => edited(setSeoDescription)(e.currentTarget.value)}
           />
         </div>
       </div>
@@ -372,9 +400,9 @@ function PageForm(props: { page: PageRow; onDone: () => void; ogCard?: OgCardOpt
           class="louise-input"
           value={ogImage()}
           placeholder="https://…/share.jpg"
-          onInput={(e) => setOgImage(e.currentTarget.value)}
+          onInput={(e) => edited(setOgImage)(e.currentTarget.value)}
         />
-        <MediaUrlPicker onPick={(url) => setOgImage(url)} />
+        <MediaUrlPicker onPick={edited(setOgImage)} />
       </div>
 
       <OgPreview customImage={ogImage()} title={seoTitle() || title()} cardOptions={props.ogCard} />
@@ -385,24 +413,14 @@ function PageForm(props: { page: PageRow; onDone: () => void; ogCard?: OgCardOpt
         </div>
       </Show>
 
-      <div class="louise-form-actions">
-        <button
-          class="louise-btn louise-btn-primary"
-          type="button"
-          disabled={saving()}
-          onClick={() => void save()}
-        >
-          {saving() ? "Saving…" : "Save settings"}
-        </button>
-        <Show when={status() === "published" && slug()}>
+      {/* Save/Delete live in the drawer footer; only the preview link stays inline. */}
+      <Show when={status() === "published" && slug()}>
+        <div class="louise-form-actions">
           <a class="louise-btn" href={`/${slug()}`} target="_blank" rel="noreferrer">
-            View
+            View published page →
           </a>
-        </Show>
-        <button class="louise-btn louise-btn-danger" type="button" onClick={() => void remove()}>
-          <Icon name="trash" /> Delete
-        </button>
-      </div>
+        </div>
+      </Show>
     </div>
   );
 }

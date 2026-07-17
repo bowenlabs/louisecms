@@ -7,8 +7,9 @@
 // Talks to the generic louise-toolkit/editor `media` route.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { Icon } from "../icons.jsx";
+import { usePanelActions } from "./panel-actions.jsx";
 import { apiGet, louiseQueryKeys } from "./query.js";
 
 /** A tracked media asset (a `media` table row + its resolved public `url`). */
@@ -45,6 +46,9 @@ export function MediaPanel() {
   const [uploading, setUploading] = createSignal(false);
   const [copied, setCopied] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  // Only one asset's alt/caption editor is open at a time — its Save/Cancel own
+  // the drawer footer, so the footer stack always has a single, unambiguous top.
+  const [editingKey, setEditingKey] = createSignal<string | null>(null);
 
   const query = useQuery(() => ({
     queryKey: louiseQueryKeys.media,
@@ -150,6 +154,9 @@ export function MediaPanel() {
                   item={m}
                   copied={copied() === m.url}
                   deleting={deleteMutation.isPending}
+                  editing={editingKey() === m.key}
+                  onEdit={() => setEditingKey(m.key)}
+                  onCloseEdit={() => setEditingKey((k) => (k === m.key ? null : k))}
                   onCopy={() => void copy(m.url)}
                   onDelete={() => del(m.key)}
                   onSaved={() => qc.invalidateQueries({ queryKey: louiseQueryKeys.media })}
@@ -165,55 +172,26 @@ export function MediaPanel() {
 }
 
 /**
- * One asset card: thumbnail (with its real alt), filename/size/dimensions, and
- * an inline editor for the asset-level `alt`/`caption` — the accessibility
- * description reused wherever the asset is placed. Saving PATCHes the `media`
- * route and refreshes the list.
+ * One asset card: thumbnail (with its real alt), filename/size/dimensions, and —
+ * when it's the single open editor — the asset-level `alt`/`caption` inputs. Its
+ * Save/Cancel live in the drawer footer (via {@link MediaEditor}); the card's own
+ * Copy / Alt / Delete stay inline in the grid.
  */
 function MediaCard(props: {
   item: MediaItem;
   copied: boolean;
   deleting: boolean;
+  /** This card is the one open editor (only one across the grid at a time). */
+  editing: boolean;
+  onEdit: () => void;
+  onCloseEdit: () => void;
   onCopy: () => void;
   onDelete: () => void;
   onSaved: () => void;
   onError: (msg: string) => void;
 }) {
-  const [editing, setEditing] = createSignal(false);
-  const [alt, setAlt] = createSignal(props.item.alt ?? "");
-  const [caption, setCaption] = createSignal(props.item.caption ?? "");
-  const [saving, setSaving] = createSignal(false);
-
   const dims = () =>
     props.item.width && props.item.height ? `${props.item.width}×${props.item.height}` : "";
-
-  const startEdit = () => {
-    setAlt(props.item.alt ?? "");
-    setCaption(props.item.caption ?? "");
-    setEditing(true);
-  };
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      const res = await fetch("/api/louise/media", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ key: props.item.key, alt: alt(), caption: caption() }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        props.onError(body.error || `Save failed (${res.status})`);
-        return;
-      }
-      setEditing(false);
-      props.onSaved();
-    } catch (err) {
-      props.onError(err instanceof Error ? err.message : "Save failed");
-    } finally {
-      setSaving(false);
-    }
-  };
 
   return (
     <div class="louise-media-card">
@@ -225,67 +203,123 @@ function MediaCard(props: {
         <div class="louise-item-sub">
           {[fmtSize(props.item.size), dims()].filter(Boolean).join(" · ")}
         </div>
-        <Show when={!editing() && props.item.alt}>
+        <Show when={!props.editing && props.item.alt}>
           <div class="louise-item-sub louise-media-alt" title={props.item.alt ?? ""}>
             {props.item.alt}
           </div>
         </Show>
       </div>
-      <Show when={editing()}>
-        <div class="louise-media-edit">
-          <input
-            class="louise-input"
-            type="text"
-            placeholder="Alt text (describe the image)"
-            value={alt()}
-            onInput={(e) => setAlt(e.currentTarget.value)}
-          />
-          <input
-            class="louise-input"
-            type="text"
-            placeholder="Caption (optional)"
-            value={caption()}
-            onInput={(e) => setCaption(e.currentTarget.value)}
-          />
+      <Show
+        when={props.editing}
+        fallback={
           <div class="louise-media-actions">
-            <button
-              class="louise-btn louise-btn-primary"
-              type="button"
-              disabled={saving()}
-              onClick={() => void save()}
-            >
-              {saving() ? "Saving…" : "Save"}
+            <button class="louise-btn" type="button" onClick={props.onCopy}>
+              {props.copied ? "Copied" : "Copy URL"}
             </button>
             <button
               class="louise-btn"
               type="button"
-              disabled={saving()}
-              onClick={() => setEditing(false)}
+              aria-label="Edit alt text"
+              onClick={props.onEdit}
             >
-              Cancel
+              <Icon name="pencil" /> Alt
+            </button>
+            <button
+              class="louise-icon-btn"
+              type="button"
+              aria-label="Delete"
+              disabled={props.deleting}
+              onClick={props.onDelete}
+            >
+              <Icon name="trash" />
             </button>
           </div>
-        </div>
+        }
+      >
+        <MediaEditor
+          item={props.item}
+          onSaved={props.onSaved}
+          onError={props.onError}
+          onClose={props.onCloseEdit}
+        />
       </Show>
-      <Show when={!editing()}>
-        <div class="louise-media-actions">
-          <button class="louise-btn" type="button" onClick={props.onCopy}>
-            {props.copied ? "Copied" : "Copy URL"}
-          </button>
-          <button class="louise-btn" type="button" aria-label="Edit alt text" onClick={startEdit}>
-            <Icon name="pencil" /> Alt
-          </button>
-          <button
-            class="louise-icon-btn"
-            type="button"
-            aria-label="Delete"
-            disabled={props.deleting}
-            onClick={props.onDelete}
-          >
-            <Icon name="trash" />
-          </button>
-        </div>
-      </Show>
+    </div>
+  );
+}
+
+/**
+ * The single open alt/caption editor: mounts when a card enters edit mode and
+ * pushes its Save/Cancel onto the drawer footer (deepest-wins), popping them when
+ * it closes. Save PATCHes the `media` route + refreshes the list; Cancel discards.
+ */
+function MediaEditor(props: {
+  item: MediaItem;
+  onSaved: () => void;
+  onError: (msg: string) => void;
+  onClose: () => void;
+}) {
+  const actions = usePanelActions();
+  const [alt, setAlt] = createSignal(props.item.alt ?? "");
+  const [caption, setCaption] = createSignal(props.item.caption ?? "");
+  const [dirty, setDirty] = createSignal(false);
+
+  const save = async () => {
+    try {
+      const res = await fetch("/api/louise/media", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key: props.item.key, alt: alt(), caption: caption() }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        props.onError(body.error || `Save failed (${res.status})`);
+        return;
+      }
+      props.onSaved();
+      props.onClose();
+    } catch (err) {
+      props.onError(err instanceof Error ? err.message : "Save failed");
+    }
+  };
+
+  onMount(() =>
+    onCleanup(
+      actions.push([
+        {
+          id: "save",
+          label: "Save",
+          kind: "primary",
+          busyLabel: "Saving…",
+          disabled: () => !dirty(),
+          onClick: save,
+        },
+        { id: "cancel", label: "Cancel", kind: "ghost", onClick: props.onClose },
+      ]),
+    ),
+  );
+
+  return (
+    <div class="louise-media-edit">
+      <input
+        class="louise-input"
+        type="text"
+        placeholder="Alt text (describe the image)"
+        value={alt()}
+        onInput={(e) => {
+          setAlt(e.currentTarget.value);
+          setDirty(true);
+        }}
+      />
+      <input
+        class="louise-input"
+        type="text"
+        placeholder="Caption (optional)"
+        value={caption()}
+        onInput={(e) => {
+          setCaption(e.currentTarget.value);
+          setDirty(true);
+        }}
+      />
     </div>
   );
 }
