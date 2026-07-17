@@ -9,12 +9,14 @@ import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createSettingsQueryClient,
+  DrawerFooter,
   Settings,
   ImageField,
   InquiriesPanel,
   MediaPanel,
   OPEN_SETTINGS_EVENT,
   PagesPanel,
+  PanelActionsProvider,
   SettingsPanel,
 } from "../../src/client/settings/index.js";
 
@@ -27,6 +29,22 @@ function mount(ui: () => JSX.Element) {
   document.body.appendChild(host);
   dispose = render(() => <QueryClientProvider client={qc}>{ui()}</QueryClientProvider>, host);
 }
+
+// A framework panel mounted outside the full shell still needs the action-footer
+// provider (it pushes Save/Revert there) — wrap it like the shell does, with the
+// footer rendered after the body, so tests can assert against the real footer.
+function mountPanel(ui: () => JSX.Element) {
+  mount(() => (
+    <PanelActionsProvider>
+      {ui()}
+      <DrawerFooter />
+    </PanelActionsProvider>
+  ));
+}
+
+/** The footer's Save action button (the migrated home for panel Save). */
+const footSave = () =>
+  host.querySelector<HTMLButtonElement>('.louise-drawer-foot [data-action="save"]');
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -143,7 +161,8 @@ describe("Settings shell — two-group registry split", () => {
     openDrawer();
 
     frameButton("Settings")!.click();
-    await vi.waitFor(() => expect(host.textContent).toContain("Save settings"));
+    // The Settings panel's Save now lives in the shell's action footer.
+    await vi.waitFor(() => expect(footSave()).not.toBeNull());
     // The framework overlay replaces the tab body.
     expect(host.textContent).not.toContain("inq-body");
   });
@@ -186,25 +205,28 @@ describe("SettingsPanel — base groups + declarative extension", () => {
       }
       return jsonResponse({ ok: true });
     });
-    mount(() => (
+    mountPanel(() => (
       <SettingsPanel
         extension={[{ title: "Coffee", fields: [{ key: "roastNote", label: "Roast note" }] }]}
       />
     ));
 
-    await vi.waitFor(() => expect(host.textContent).toContain("Save settings"));
+    await vi.waitFor(() => expect(host.textContent).toContain("Roast note"));
     // Framework base groups.
     for (const g of ["Identity", "Appearance", "Navigation", "Contact", "SEO"]) {
       expect(host.textContent).toContain(g);
     }
     // Site extension group + its field, seeded from the loaded settings.
     expect(host.textContent).toContain("Coffee");
-    expect(host.textContent).toContain("Roast note");
 
-    const save = Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find(
-      (b) => b.textContent?.trim() === "Save settings",
-    )!;
-    save.click();
+    // Save is dirty-gated in the footer: idle until a field changes.
+    expect(footSave()!.disabled).toBe(true);
+    const roast = host.querySelector<HTMLInputElement>("#louise-set-roastNote")!;
+    roast.value = "dark";
+    // Solid delegates `input` from the document root, so the event must bubble.
+    roast.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(footSave()!.disabled).toBe(false);
+    footSave()!.click();
 
     await vi.waitFor(() => {
       const post = fetchMock.mock.calls.find(
@@ -212,9 +234,10 @@ describe("SettingsPanel — base groups + declarative extension", () => {
       );
       expect(post).toBeTruthy();
       const body = JSON.parse(String(post![1]!.body));
-      // Base column key and the site-declared custom key both go in the patch.
+      // Base column key (untouched, from load) and the site-declared custom key
+      // (edited) both go in the patch.
       expect(body.siteName).toBe("Coracle");
-      expect(body.roastNote).toBe("medium");
+      expect(body.roastNote).toBe("dark");
     });
   });
 
@@ -224,15 +247,14 @@ describe("SettingsPanel — base groups + declarative extension", () => {
         ? jsonResponse({ settings: {} })
         : jsonResponse({ ok: true }),
     );
-    mount(() => (
+    mountPanel(() => (
       <SettingsPanel
         baseGroups={[
           { title: "Navigation", fields: [{ key: "navLinks", label: "Nav", type: "links" }] },
         ]}
       />
     ));
-    await vi.waitFor(() => expect(host.textContent).toContain("Save settings"));
-    expect(host.textContent).toContain("Navigation");
+    await vi.waitFor(() => expect(host.textContent).toContain("Navigation"));
     // Default framework groups the site didn't include are gone.
     expect(host.textContent).not.toContain("Appearance");
     expect(host.textContent).not.toContain("Identity");
@@ -244,7 +266,7 @@ describe("SettingsPanel — base groups + declarative extension", () => {
         ? jsonResponse({ settings: { tagline: "Prints & goods" } })
         : jsonResponse({ ok: true }),
     );
-    mount(() => (
+    mountPanel(() => (
       <SettingsPanel
         baseGroups={[]}
         extension={[
@@ -271,12 +293,10 @@ describe("SettingsPanel — base groups + declarative extension", () => {
     ));
     await vi.waitFor(() => expect(host.textContent).toContain("custom:Prints & goods"));
 
-    // The render field drives onChange → the new value lands in the save payload.
+    // The render field drives onChange → dirties the panel → the new value lands
+    // in the save payload once the footer's Save is clicked.
     host.querySelector<HTMLButtonElement>('[data-testid="custom-field"]')!.click();
-    const save = Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find(
-      (b) => b.textContent?.trim() === "Save settings",
-    )!;
-    save.click();
+    footSave()!.click();
     await vi.waitFor(() => {
       const post = fetchMock.mock.calls.find(
         (c) => (c[1]?.method ?? "GET").toUpperCase() === "POST",
@@ -356,6 +376,49 @@ describe("PagesPanel — list + built-in pages", () => {
     expect(host.textContent).toContain("Built-in pages");
     expect(host.textContent).toContain("Home");
   });
+
+  it("opens page settings and saves via the footer (dirty-gated) + PATCHes the row", async () => {
+    const fetchMock = stubFetch((url, method) => {
+      if (url.endsWith("/api/louise/pages") && method === "GET") {
+        return jsonResponse({ pages: [{ id: 1, title: "Terms", slug: "terms", status: "draft" }] });
+      }
+      if (url.endsWith("/api/louise/pages/1") && method === "GET") {
+        return jsonResponse({
+          page: { id: 1, title: "Terms", slug: "terms", status: "draft", noindex: false },
+        });
+      }
+      return jsonResponse({ ok: true });
+    });
+    mountPanel(() => <PagesPanel />);
+
+    // Open the per-page settings form from the list's gear.
+    await vi.waitFor(() => expect(host.textContent).toContain("Terms"));
+    host.querySelector<HTMLButtonElement>('button[aria-label="Page settings"]')!.click();
+
+    // Save + Delete render in the footer; Save is dirty-gated until a field edits.
+    await vi.waitFor(() =>
+      expect(host.querySelector('.louise-drawer-foot [data-action="delete"]')).not.toBeNull(),
+    );
+    await vi.waitFor(() =>
+      expect(host.querySelector<HTMLInputElement>("#pg-title")?.value).toBe("Terms"),
+    );
+    expect(footSave()!.disabled).toBe(true);
+
+    const title = host.querySelector<HTMLInputElement>("#pg-title")!;
+    title.value = "Terms of Service";
+    title.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(footSave()!.disabled).toBe(false);
+    footSave()!.click();
+
+    await vi.waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        (c) => (c[1]?.method ?? "GET").toUpperCase() === "PATCH",
+      );
+      expect(patch).toBeTruthy();
+      expect(String(patch![0])).toContain("/api/louise/pages/1");
+      expect(JSON.parse(String(patch![1]!.body)).title).toBe("Terms of Service");
+    });
+  });
 });
 
 describe("MediaPanel — list", () => {
@@ -372,6 +435,72 @@ describe("MediaPanel — list", () => {
 
     await vi.waitFor(() => expect(host.textContent).toContain("photo.jpg"));
     expect(host.textContent).toContain("2 KB");
+  });
+
+  it("edits an asset's alt via the footer (dirty-gated) and PATCHes the media route", async () => {
+    const fetchMock = stubFetch((url, method) => {
+      if (url.endsWith("/api/louise/media") && method === "GET") {
+        return jsonResponse({ media: [{ key: "web/a.jpg", url: "https://cdn/a.jpg" }] });
+      }
+      return jsonResponse({ ok: true });
+    });
+    mountPanel(() => <MediaPanel />);
+
+    await vi.waitFor(() => expect(host.textContent).toContain("a.jpg"));
+    host.querySelector<HTMLButtonElement>('button[aria-label="Edit alt text"]')!.click();
+
+    // Save + Cancel land in the footer; Save is dirty-gated.
+    await vi.waitFor(() =>
+      expect(host.querySelector('.louise-drawer-foot [data-action="cancel"]')).not.toBeNull(),
+    );
+    expect(footSave()!.disabled).toBe(true);
+
+    const altInput = host.querySelector<HTMLInputElement>(".louise-media-edit .louise-input")!;
+    altInput.value = "A red door";
+    altInput.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(footSave()!.disabled).toBe(false);
+    footSave()!.click();
+
+    await vi.waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        (c) => (c[1]?.method ?? "GET").toUpperCase() === "PATCH",
+      );
+      expect(patch).toBeTruthy();
+      const body = JSON.parse(String(patch![1]!.body));
+      expect(body.key).toBe("web/a.jpg");
+      expect(body.alt).toBe("A red door");
+    });
+  });
+
+  it("keeps a single open editor — opening one asset closes another's footer editor", async () => {
+    stubFetch((url, method) => {
+      if (url.endsWith("/api/louise/media") && method === "GET") {
+        return jsonResponse({
+          media: [
+            { key: "web/a.jpg", url: "https://cdn/a.jpg" },
+            { key: "web/b.jpg", url: "https://cdn/b.jpg" },
+          ],
+        });
+      }
+      return jsonResponse({ ok: true });
+    });
+    mountPanel(() => <MediaPanel />);
+
+    await vi.waitFor(() => expect(host.textContent).toContain("b.jpg"));
+    const altButtons = () =>
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button[aria-label="Edit alt text"]'));
+    expect(altButtons().length).toBe(2);
+
+    // Open the first asset's editor → one editor mounted, and that card's own Alt
+    // button is replaced by the editor (so only the other card's remains).
+    altButtons()[0]!.click();
+    await vi.waitFor(() => expect(host.querySelectorAll(".louise-media-edit").length).toBe(1));
+    expect(altButtons().length).toBe(1);
+
+    // Opening the other closes the first — still exactly one editor, one footer.
+    altButtons()[0]!.click();
+    expect(host.querySelectorAll(".louise-media-edit").length).toBe(1);
+    expect(host.querySelectorAll('.louise-drawer-foot [data-action="save"]').length).toBe(1);
   });
 });
 
