@@ -10,6 +10,7 @@
 //   queue()               → drain deferred side-effects off the write path (FTS reindex)
 //   scheduled()           → daily link-checker across both hosts
 import { handle } from "@astrojs/cloudflare/handler";
+import { vitalsRoute } from "louise-toolkit/analytics";
 import { checkLinks, ogCacheKey, ogCardSvg, ogImage } from "louise-toolkit/browser";
 import {
   DEFAULT_PAGE_FIELDS,
@@ -300,6 +301,11 @@ const ogRoute: WorkerRoute<WorkerEnv> = (request) => {
   return url.pathname === "/og.png" ? handleOgImage(url) : undefined;
 };
 
+// Public Core Web Vitals ingestion (#106): the visitor beacon (Vitals.astro)
+// POSTs LCP/CLS/INP here; same-origin-guarded, writes to the ANALYTICS dataset.
+// Unauthenticated by design (anonymous field data), so it sits outside editorRoutes.
+const vitalsIngestRoute = vitalsRoute<WorkerEnv>({ dataset: (env) => env.ANALYTICS });
+
 // The durable publish pipeline (#88). Re-exported from the Worker entry so
 // wrangler's `[[workflows]]` `class_name` can find it.
 export { PublishWorkflow } from "./workflows/publish.js";
@@ -310,7 +316,7 @@ export { EditSessionDO } from "./realtime/edit-session.js";
 export default composeWorker<WorkerEnv>({
   // docs host first (never touches the content); then the editor API, media, OG;
   // everything else falls through to Astro SSR.
-  routes: [docsRoute, ...editorRoutes, mediaAssetRoute, ogRoute],
+  routes: [docsRoute, ...editorRoutes, vitalsIngestRoute, mediaAssetRoute, ogRoute],
   fetch: (request, env, ctx) => handle(request, env, ctx),
   // Side-effect consumer (#77): drain the deferred reindex jobs enqueued on the
   // publish path. processBatch acks each message on success and retries on a
