@@ -183,8 +183,8 @@ const CSS = `
 }
 .louise-savedraft { color: var(--louise-green); }
 .louise-savedraft:hover:not(:disabled) { background: rgba(22, 163, 74, 0.1); }
-.louise-publish { color: var(--louise-yellow); }
-.louise-publish:hover:not(:disabled) { background: rgba(234, 179, 8, 0.12); }
+.louise-publish { color: var(--louise-green); }
+.louise-publish:hover:not(:disabled) { background: rgba(22, 163, 74, 0.12); }
 .louise-savedraft:disabled,
 .louise-publish:disabled { opacity: 0.45; cursor: default; }
 
