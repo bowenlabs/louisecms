@@ -46,6 +46,7 @@ import { pagesDraftDeps } from "./lib/louise/versioned-pages.js";
 import { syncPageVector } from "./lib/louise/vectors.js";
 import { pagesCollection } from "./pages-collection.js";
 import { inquiries, media, pages, siteSettings } from "./schema.js";
+import { BLOCKS } from "./sections/blocks.js";
 import { SECTIONS } from "./sections/catalog.js";
 
 type WorkerEnv = CloudflareEnv;
@@ -228,6 +229,7 @@ const editorRoutes: WorkerRoute<WorkerEnv>[] = [
         await assertValidSections(SECTIONS, data.sections, {
           operation: ctx.operation,
           mediaBase: MEDIA_BASE,
+          blockCatalog: BLOCKS,
         });
       }
     },

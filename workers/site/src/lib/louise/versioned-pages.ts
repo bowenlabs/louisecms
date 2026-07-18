@@ -9,6 +9,7 @@
 import { assertValidSections } from "louise-toolkit/content";
 import { pagesCollection } from "../../pages-collection.js";
 import { pages, pagesVersions } from "../../schema.js";
+import { BLOCKS } from "../../sections/blocks.js";
 import { SECTIONS } from "../../sections/catalog.js";
 
 /** Media base — matches wrangler.jsonc `vars.MEDIA_URL`; every section image is
@@ -28,6 +29,7 @@ export const pagesDraftDeps = {
       await assertValidSections(SECTIONS, data.sections, {
         operation: "update",
         mediaBase: MEDIA_BASE,
+        blockCatalog: BLOCKS,
       });
     }
   },
