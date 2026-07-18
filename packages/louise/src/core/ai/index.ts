@@ -157,8 +157,10 @@ function tidyAltText(raw: string): string {
 // ── Text assists: rewrite + SEO ──────────────────────────────────────────────
 
 /** Default instruct model for {@link rewriteText} and {@link suggestSeo}.
- *  Overridable per call so a site can swap models without a code change. */
-export const DEFAULT_TEXT_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+ *  Overridable per call so a site can swap models without a code change.
+ *  Was `@cf/meta/llama-3.1-8b-instruct`, retired by Workers AI (EOL 2026-05-30);
+ *  bumped to the current Llama 3.3 fp8-fast build so the assists keep working. */
+export const DEFAULT_TEXT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
 /** How {@link rewriteText} should transform the passage. */
 export type RewriteMode = "tighten" | "rephrase" | "simplify" | "fix";
