@@ -22,7 +22,13 @@
 // updates only that leaf — no row teardown, no focus loss.
 
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { deleteSectionElement, mountSectionChrome, moveSectionElement } from "./chrome.js";
+import {
+  deleteBlockElement,
+  deleteSectionElement,
+  moveBlockElement,
+  mountSectionChrome,
+  moveSectionElement,
+} from "./chrome.js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { Portal, render } from "solid-js/web";
 import { type AutoSaveOption, type Autosave, createAutosave, resolveAutoSave } from "./autosave.js";
@@ -361,6 +367,14 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
         onMoveUp: (i) => moveSection(i, -1),
         onMoveDown: (i) => moveSection(i, 1),
         onDelete: (i) => removeSection(i),
+        // Block layer (#182 Phase 2 / ADR 0005): reorder/delete a section's
+        // blocks in place — the block analogue of the section ops. Block add/swap
+        // still need the fragment-render route (Phase 3).
+        blocks: {
+          onMoveUp: (r) => moveBlock(r.section, r.block, -1),
+          onMoveDown: (r) => moveBlock(r.section, r.block, 1),
+          onDelete: (r) => removeBlock(r.section, r.block),
+        },
       }),
     );
 
@@ -629,6 +643,29 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
       return next;
     });
     moveSectionElement(i, j);
+    touched();
+  };
+  // Block reorder/delete (#182 Phase 2 / ADR 0005 §4): the block analogue of the
+  // section ops above, scoped within one section's `blocks` array. Reconcile the
+  // store and mirror the change on the already-rendered DOM (move/remove the
+  // marked block element + re-stamp block markers), then stage a draft.
+  const removeBlock = (section: number, block: number) => {
+    set("items", section, "blocks", (b: unknown) =>
+      (Array.isArray(b) ? b : []).filter((_, idx) => idx !== block),
+    );
+    deleteBlockElement(section, block);
+    touched();
+  };
+  const moveBlock = (section: number, block: number, delta: number) => {
+    const blocks = state.items[section]?.blocks;
+    const to = block + delta;
+    if (!Array.isArray(blocks) || to < 0 || to >= blocks.length) return;
+    set("items", section, "blocks", (b: unknown) => {
+      const next = (Array.isArray(b) ? b : []).slice();
+      [next[block], next[to]] = [next[to], next[block]];
+      return next;
+    });
+    moveBlockElement(section, block, to);
     touched();
   };
   const addItem = (i: number, key: string, itemFields: Record<string, SectionField>) =>

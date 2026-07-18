@@ -30,31 +30,18 @@ export const SECTIONS: SectionCatalog = {
       },
     },
   },
+  // Reference slice for the first-class block layer (#182 / ADR 0005): the grid's
+  // cards are now `feature` blocks (see ./blocks.ts) rather than a homogeneous
+  // `items` array — each card is an on-canvas block (blue ring/toolbar), reordered
+  // and deleted in place. `heading`/`headingLine2` stay direct section fields.
   featureGrid: {
     label: "Feature grid",
     icon: "ph ph-squares-four",
     fields: {
       heading: { type: "text", label: "Heading", placeholder: "Section heading" },
       headingLine2: { type: "text", label: "Heading (line 2)", placeholder: "Second line" },
-      items: {
-        type: "array",
-        label: "Primitives",
-        itemLabel: "Primitive",
-        itemFields: {
-          name: { type: "text", label: "Name", placeholder: "e.g. content" },
-          body: { type: "textarea", label: "Body", placeholder: "What it does" },
-          // Dock-only: a Phosphor token (e.g. "ph-database") and a colorway
-          // keyword (blue/orange/green/gold). The render owns the exact tokens.
-          icon: { type: "text", label: "Icon (ph-…)", placeholder: "ph-database", inline: false },
-          colorway: {
-            type: "text",
-            label: "Color (blue/orange/green/gold)",
-            placeholder: "blue",
-            inline: false,
-          },
-        },
-      },
     },
+    blocks: { allow: ["feature"] },
   },
   editDemo: {
     label: "Edit-in-place demo",
