@@ -10,8 +10,7 @@ import brandFontsCss from "../theme/fonts.css?raw";
 
 const LOUISE_BLUE = "#1481ef";
 
-const CSS =
-  `
+const CSS = `
 :root {
   --louise-blue: ${LOUISE_BLUE};
   --louise-green: #16a34a;
@@ -978,8 +977,8 @@ const CSS =
 .louise-icon svg { width: 100%; height: 100%; display: block; }
 /* Format bubble (#182 Phase 5): ProseKit's InlinePopover positions this pill over
    the current text selection and controls its own show/hide; we only set the
-   stacking context here — the inner pill look lives on `.louise -
-  toolbar`. */
+   stacking context here -- the inner pill look lives on the .louise-toolbar
+   class. (No backticks in this comment: the whole block is a JS template string.) */
 .louise-format-bubble {
   z-index: 2147483004;
 }
