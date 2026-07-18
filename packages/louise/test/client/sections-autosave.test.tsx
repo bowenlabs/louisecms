@@ -107,6 +107,57 @@ describe("mountSections — auto-save (sections drafts)", () => {
     expect(calls.some((c) => c.url.endsWith("/publish"))).toBe(false);
   });
 
+  it("flushes a pending draft on astro:before-swap — view-transition nav (#74)", async () => {
+    const { calls } = stubFetch();
+    const el = host();
+    dispose = mountSections(el, {
+      catalog: CATALOG,
+      pageId: 1,
+      initial: initial(),
+      autoSave: { debounceMs: 5000 },
+    });
+
+    const node = el.querySelector<HTMLElement>("[data-louise-sfield]");
+    if (!node) throw new Error("sfield not wired");
+    type(node, "Swept heading");
+    // A soft nav fires astro:before-swap (not pagehide) — the dock must flush the
+    // pending draft before its DOM is swapped away, or the in-flight edit is lost.
+    document.dispatchEvent(new Event("astro:before-swap"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    const drafts = calls.filter(
+      (c) => c.method === "POST" && c.url === "/api/louise/pages/1/versions",
+    );
+    expect(drafts).toHaveLength(1);
+    expect((drafts[0].body as { sections: SectionItem[] }).sections[0]).toMatchObject({
+      _type: "hero",
+      title: "Swept heading",
+    });
+  });
+
+  it("drops its before-swap listener on teardown, so a re-mount can't double-flush", async () => {
+    const { calls } = stubFetch();
+    const el = host();
+    const teardown = mountSections(el, {
+      catalog: CATALOG,
+      pageId: 1,
+      initial: initial(),
+      autoSave: { debounceMs: 5000 },
+    });
+    const node = el.querySelector<HTMLElement>("[data-louise-sfield]");
+    if (!node) throw new Error("sfield not wired");
+    type(node, "torn down");
+    // The astro:page-load bootstrap tears the old dock down before re-mounting the
+    // next page's — its listeners (incl. before-swap) must go with it.
+    teardown();
+    dispose = undefined;
+
+    calls.length = 0;
+    document.dispatchEvent(new Event("astro:before-swap"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+  });
+
   it("opt-out (autoSave:false) keeps a Save draft button and never auto-saves", async () => {
     const { calls } = stubFetch();
     const el = host();

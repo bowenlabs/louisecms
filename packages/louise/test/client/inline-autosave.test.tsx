@@ -1,7 +1,8 @@
 // happy-dom coverage for auto-save on the inline field surface (mountLouise):
 // a debounced live save after typing, no manual Save button while auto-save is
-// on, edit-during-save is never dropped, a visibilitychange flush, and the
-// opt-out path. Plain-text markers only — no ProseKit — so the DOM is stable.
+// on, edit-during-save is never dropped, a visibilitychange flush, the
+// view-transition (astro:before-swap / astro:after-swap) lifecycle (#74), and
+// the opt-out path. Plain-text markers only — no ProseKit — so the DOM is stable.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mountLouise } from "../../src/client/index.js";
@@ -45,7 +46,10 @@ beforeEach(() => {
 
 afterEach(() => {
   // mountLouise is idempotent via this flag — reset it, and remove what it
-  // injected, so the next test mounts fresh.
+  // injected, so the next test mounts fresh. astro:after-swap also drops the
+  // module-level `activeInline` (the shared leave handlers are wired once and
+  // persist across tests), so a stray event can't flush a defunct mount.
+  document.dispatchEvent(new Event("astro:after-swap"));
   delete document.documentElement.dataset.louiseMounted;
   document.querySelectorAll(".louise-bar, [data-louise-field]").forEach((n) => n.remove());
   vi.unstubAllGlobals();
@@ -223,5 +227,86 @@ describe("mountLouise — auto-save via Astro Action (#138)", () => {
       ([, init]) => ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase() === "POST",
     );
     expect(posts).toHaveLength(0);
+  });
+});
+
+describe("mountLouise — view transitions (#74)", () => {
+  it("flushes pending edits on astro:before-swap (soft nav fires nothing else)", async () => {
+    const fetchMock = stubFetch(() => new Response(null, { status: 200 }));
+    const el = addField("settings", "1", "heroHeadline", "");
+    mountLouise({ onOpenSettings: () => {}, autoSave: { debounceMs: 5000 } });
+
+    type(el, "mid-edit");
+    // A view-transition nav fires none of pagehide/visibilitychange — only
+    // astro:before-swap — so without a flush hung off it the edit is lost.
+    document.dispatchEvent(new Event("astro:before-swap"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(bodyOf(fetchMock.mock.calls[0][1]).value).toBe("mid-edit");
+    // keepalive so the POST survives the swap that's about to replace the page.
+    expect((fetchMock.mock.calls[0][1] as RequestInit).keepalive).toBe(true);
+  });
+
+  it("uses the raw keepalive fetch on before-swap even with an Action injected", async () => {
+    const fetchMock = stubFetch(() => new Response(null, { status: 200 }));
+    const save = vi.fn(async (_input: unknown) => ({ ok: true }));
+    const el = addField("settings", "1", "heroHeadline", "");
+    mountLouise({ onOpenSettings: () => {}, autoSave: { debounceMs: 5000 }, actions: { save } });
+
+    type(el, "urgent");
+    document.dispatchEvent(new Event("astro:before-swap"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    // An Action can't keepalive, so the swap flush must fall back to the raw fetch.
+    expect(save).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect((fetchMock.mock.calls[0][1] as RequestInit).keepalive).toBe(true);
+  });
+
+  it("clears the mount guard on astro:after-swap so the next page re-mounts", async () => {
+    stubFetch(() => new Response(null, { status: 200 }));
+    addField("settings", "1", "heroHeadline", "");
+    mountLouise({ onOpenSettings: () => {}, autoSave: { debounceMs: 50 } });
+    expect(document.documentElement.dataset.louiseMounted).toBe("1");
+
+    // <html> survives the swap, so the guard is cleared here rather than by the
+    // (replaced) body — otherwise the next page could never re-mount.
+    document.dispatchEvent(new Event("astro:after-swap"));
+    expect(document.documentElement.dataset.louiseMounted).toBeUndefined();
+  });
+
+  it("re-mounts against the NEW page's fields after a swap, without stacking handlers", async () => {
+    const fetchMock = stubFetch(() => new Response(null, { status: 200 }));
+    // Page A.
+    addField("settings", "1", "heroHeadline", "");
+    mountLouise({ onOpenSettings: () => {}, autoSave: { debounceMs: 50 } });
+
+    // Soft-nav away: flush, then the swap replaces <body> (bar + fields gone).
+    document.dispatchEvent(new Event("astro:before-swap"));
+    document.dispatchEvent(new Event("astro:after-swap"));
+    document.querySelectorAll(".louise-bar, [data-louise-field]").forEach((n) => n.remove());
+
+    // Page B (new body, different field) → re-mount, as the astro:page-load
+    // bootstrap does. The guard was cleared on after-swap, so this proceeds.
+    const b = addField("pages", "9", "title", "");
+    mountLouise({ onOpenSettings: () => {}, autoSave: { debounceMs: 50 } });
+    // One bar for the new page — the swap removed page A's, and re-mount adds one.
+    expect(document.querySelectorAll(".louise-bar")).toHaveLength(1);
+
+    fetchMock.mockClear();
+    type(b, "page B title");
+    // Exactly one flush on the next before-swap: the leave handlers are wired once
+    // (not per mount), so two mount cycles don't double-save.
+    document.dispatchEvent(new Event("astro:before-swap"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(bodyOf(fetchMock.mock.calls[0][1])).toMatchObject({
+      collection: "pages",
+      key: "9",
+      field: "title",
+      value: "page B title",
+    });
   });
 });
