@@ -10,7 +10,9 @@ const CATALOG: SectionCatalog = {
   gallery: {
     label: "Gallery",
     fields: {
-      blocks: {
+      // A discriminated array *field* — named `items`, not `blocks`: `blocks` is
+      // reserved for the first-class block layer on `SectionItem` (ADR 0005).
+      items: {
         type: "array",
         itemLabel: "Block",
         itemFields: { caption: { type: "text" } },
@@ -65,10 +67,10 @@ function mount(initial: SectionItem[]): () => void {
   return mountSections(el, { catalog: CATALOG, pageId: 1, initial });
 }
 
-const draftBlocks = (calls: Call[]): Record<string, unknown>[] => {
+const draftItems = (calls: Call[]): Record<string, unknown>[] => {
   const post = calls.find((c) => c.method === "POST" && c.url === "/api/louise/pages/1/versions");
-  return (post?.body as { sections: Array<{ blocks?: Record<string, unknown>[] }> }).sections[0]
-    .blocks as Record<string, unknown>[];
+  return (post?.body as { sections: Array<{ items?: Record<string, unknown>[] }> }).sections[0]
+    .items as Record<string, unknown>[];
 };
 
 let dispose: (() => void) | undefined;
@@ -83,7 +85,7 @@ afterEach(() => {
 describe("mountSections — discriminated array type-switcher (#182 Phase 0)", () => {
   it("renders one labelled add button per variant", () => {
     stubFetch();
-    dispose = mount([{ _type: "gallery", blocks: [] }]);
+    dispose = mount([{ _type: "gallery", items: [] }]);
     const adds = [...document.querySelectorAll<HTMLButtonElement>(".louise-variant-add button")];
     expect(adds).toHaveLength(2);
     expect(adds.map((b) => b.textContent?.trim())).toEqual(["Image", "Quote"]);
@@ -91,14 +93,14 @@ describe("mountSections — discriminated array type-switcher (#182 Phase 0)", (
 
   it("adding a variant appends an item shaped as base ∪ variant fields + the key", async () => {
     const calls = stubFetch();
-    dispose = mount([{ _type: "gallery", blocks: [] }]);
+    dispose = mount([{ _type: "gallery", items: [] }]);
     const imageAdd = [
       ...document.querySelectorAll<HTMLButtonElement>(".louise-variant-add button"),
     ].find((b) => b.textContent?.includes("Image"));
     imageAdd?.click();
     await flush();
 
-    expect(draftBlocks(calls)).toEqual([{ caption: "", url: "", kind: "image" }]);
+    expect(draftItems(calls)).toEqual([{ caption: "", url: "", kind: "image" }]);
     // The new item now carries the variant switcher, set to its variant.
     expect(
       (document.querySelector(".louise-variant-switch") as unknown as HTMLSelectElement | null)
@@ -109,7 +111,7 @@ describe("mountSections — discriminated array type-switcher (#182 Phase 0)", (
   it("switching a variant keeps shared fields and swaps in the new variant's blanks", async () => {
     const calls = stubFetch();
     dispose = mount([
-      { _type: "gallery", blocks: [{ kind: "image", caption: "keep", url: "/media/x" }] },
+      { _type: "gallery", items: [{ kind: "image", caption: "keep", url: "/media/x" }] },
     ]);
     const sw = document.querySelector(
       ".louise-variant-switch",
@@ -121,6 +123,6 @@ describe("mountSections — discriminated array type-switcher (#182 Phase 0)", (
     await flush();
 
     // caption (shared) survives; url (image-only) is dropped; quote fields added.
-    expect(draftBlocks(calls)[0]).toEqual({ caption: "keep", text: "", author: "", kind: "quote" });
+    expect(draftItems(calls)[0]).toEqual({ caption: "keep", text: "", author: "", kind: "quote" });
   });
 });

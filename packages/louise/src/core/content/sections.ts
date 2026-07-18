@@ -69,15 +69,58 @@ export interface SectionDef {
   icon?: string;
   /** The section's editable fields, keyed by prop name. */
   fields: Record<string, SectionField>;
+  /**
+   * Opt this section into the first-class **block layer** (ADR 0005) — the
+   * organising layer *within* a section. Declaring this policy is what promotes
+   * a section's reserved `blocks` array from ignored free-form data to a
+   * validated, ordered list of polymorphic {@link BlockItem}s, each resolved
+   * against the {@link BlockCatalog} passed to {@link validateSections}. This is
+   * the sections analogue of `SectionField.discriminator` one level up.
+   *
+   * `allow` bounds which block types this section accepts (any block in the
+   * catalog when omitted); `min` / `max` bound the block count. Storage is
+   * unchanged — `blocks` rides in the same `sections` JSON column.
+   */
+  blocks?: { allow?: string[]; min?: number; max?: number };
 }
 
 /** The site's catalog of preconfigured section types (schema only — the bespoke
  *  render components live on the site). */
 export type SectionCatalog = Record<string, SectionDef>;
 
+/** One block type's schema (label/icon + fields) — the block-level analogue of
+ *  {@link SectionDef}. Block fields reuse {@link SectionField} verbatim, so a
+ *  block validates exactly like a section's field set: the same `Rule` chain and
+ *  the same `array` / `discriminator` support, no separate path. */
+export interface BlockDef {
+  label: string;
+  icon?: string;
+  fields: Record<string, SectionField>;
+}
+
+/** The site's catalog of block types (schema only — bespoke renders live on the
+ *  site), the block-level analogue of {@link SectionCatalog} (ADR 0005). */
+export type BlockCatalog = Record<string, BlockDef>;
+
+/** One stored block: a `_type` discriminant plus its field values — the
+ *  block-level analogue of {@link SectionItem}. Flat and ordered; blocks do not
+ *  nest blocks in v1 (named slots / cross-section moves are deferred). */
+export interface BlockItem {
+  _type: string;
+  [key: string]: unknown;
+}
+
 /** One stored section: a `_type` discriminant plus its field values. */
 export interface SectionItem {
   _type: string;
+  /**
+   * The optional organising layer *within* this section (ADR 0005): an ordered
+   * list of polymorphic blocks. Reserved structural key — a section opts into
+   * validation by declaring {@link SectionDef.blocks}. Additive: absent on every
+   * pre-block section, and a section may carry both direct fields and blocks
+   * during a transition.
+   */
+  blocks?: BlockItem[];
   [key: string]: unknown;
 }
 
@@ -91,6 +134,14 @@ export interface ValidateSectionsOptions {
    * strings). See {@link isMediaUrl}.
    */
   mediaBase?: string;
+  /**
+   * The site's {@link BlockCatalog} (ADR 0005). Required to validate any
+   * section that opts into the block layer via {@link SectionDef.blocks}: each
+   * block's `_type` resolves to a {@link BlockDef} here and its fields validate
+   * like a section's. Omit when no section uses blocks; a block whose `_type`
+   * isn't in the catalog is rejected as unknown.
+   */
+  blockCatalog?: BlockCatalog;
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -104,6 +155,9 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
  *  - each item is an object with a `_type` present in the catalog;
  *  - each declared field's value has the right primitive shape (text/textarea →
  *    string, array → array of objects whose `itemFields` are validated in turn);
+ *  - for a section that declares a `blocks` policy, its `blocks` array (count vs.
+ *    `min`/`max`, each block's `_type` against the policy `allow` + the
+ *    `blockCatalog`, then that block's fields — ADR 0005);
  *  - any field's `validation` Rule chain (reused from the content validator).
  * Absent/`undefined` (the field wasn't part of a partial update) is a no-op —
  * presence is the route allowlist's job, not this validator's.
@@ -141,8 +195,83 @@ export async function validateSections(
         ...(await validateSectionField(field, item[key], `${at}.${key}`, item, options)),
       );
     }
+    // The first-class block layer (ADR 0005). Only sections that declare a
+    // `blocks` policy validate their `blocks` array; for everything else the key
+    // is ignored free-form data (same forgiveness as any undeclared key).
+    if (def.blocks) {
+      violations.push(...(await validateBlocks(def.blocks, item.blocks, `${at}.blocks`, options)));
+    }
   }
   return violations;
+}
+
+/**
+ * Validate one section's {@link SectionItem.blocks} array against its
+ * {@link SectionDef.blocks} policy and the {@link ValidateSectionsOptions.blockCatalog}.
+ * Mirrors the top-level section pass one level down: the array shape, then each
+ * block's `_type` (allowed by policy and present in the catalog), then each of
+ * that block's declared fields via {@link validateSectionField}. An absent
+ * `blocks` is a no-op (presence is the route allowlist's job); an empty/short
+ * array is measured against `min`/`max`.
+ */
+async function validateBlocks(
+  policy: NonNullable<SectionDef["blocks"]>,
+  value: unknown,
+  path: string,
+  options: ValidateSectionsOptions,
+): Promise<ValidationViolation[]> {
+  if (value === undefined || value === null) return [];
+  const out: ValidationViolation[] = [];
+  if (!Array.isArray(value)) {
+    out.push({ path, message: `${path} must be an array`, severity: "error" });
+    return out;
+  }
+  if (policy.min !== undefined && value.length < policy.min) {
+    out.push({
+      path,
+      message: `${path} must have at least ${policy.min} block${policy.min === 1 ? "" : "s"}`,
+      severity: "error",
+    });
+  }
+  if (policy.max !== undefined && value.length > policy.max) {
+    out.push({
+      path,
+      message: `${path} must have at most ${policy.max} block${policy.max === 1 ? "" : "s"}`,
+      severity: "error",
+    });
+  }
+
+  const catalog = options.blockCatalog ?? {};
+  for (let j = 0; j < value.length; j++) {
+    const at = `${path}[${j}]`;
+    const block = value[j];
+    if (!isPlainObject(block)) {
+      out.push({ path: at, message: `${at} must be an object`, severity: "error" });
+      continue;
+    }
+    const type = block._type;
+    if (policy.allow && (typeof type !== "string" || !policy.allow.includes(type))) {
+      out.push({
+        path: `${at}._type`,
+        message: `${at} has a block type ${JSON.stringify(type)} not allowed in this section`,
+        severity: "error",
+      });
+      continue;
+    }
+    const def = typeof type === "string" ? catalog[type] : undefined;
+    if (!def) {
+      out.push({
+        path: `${at}._type`,
+        message: `${at} has an unknown block type ${JSON.stringify(type)}`,
+        severity: "error",
+      });
+      continue;
+    }
+    for (const [key, field] of Object.entries(def.fields)) {
+      out.push(...(await validateSectionField(field, block[key], `${at}.${key}`, block, options)));
+    }
+  }
+  return out;
 }
 
 async function validateSectionField(
