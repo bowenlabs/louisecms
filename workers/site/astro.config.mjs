@@ -30,6 +30,14 @@ export default defineConfig({
   // Solid islands (ADR 0001) — matches every consuming site. Powers the typed
   // editor islands that call Astro Actions (see src/islands, src/actions).
   integrations: [solid()],
+  // View Transitions + prefetch (#74): seamless soft navigation between content
+  // pages — the edit bar/drawer persist across the swap instead of a full reload.
+  // `prefetchAll` opts every in-viewport link into the default `hover` strategy,
+  // so the next page's HTML is usually warm before the click. The `<ClientRouter/>`
+  // in each content page's <head> enables the transitions; the Louise client is
+  // transition-aware (flushes auto-save on `astro:before-swap`, re-mounts on
+  // `astro:page-load`).
+  prefetch: { prefetchAll: true, defaultStrategy: "hover" },
   // Typed, validated editor-gate config (astro:env). Values still come from
   // wrangler.jsonc `vars` / `wrangler secret` at runtime; this is the schema +
   // types over them, read via `astro:env/server` at the composition layer

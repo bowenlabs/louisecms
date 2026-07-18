@@ -349,14 +349,18 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
 
     // Auto-save flush + unsaved-changes guard. `visibilitychange → hidden` /
     // `pagehide` are the reliable "leaving" signals; the keepalive draft POST
-    // lets a flush fired here still land. `beforeunload` warns while dirty. This
-    // dock is a disposable Solid component, so the listeners are removed on
-    // cleanup (unlike mountLouise, which lives for the whole page).
+    // lets a flush fired here still land. `beforeunload` warns while dirty.
+    // `astro:before-swap` covers Astro soft navigations (#74) — a view-transition
+    // nav fires none of the others, so without it the dock would drop pending
+    // edits before the swap. This dock is a disposable Solid component, so the
+    // listeners are removed on cleanup (unlike mountLouise, which lives for the
+    // whole page).
     if (autoCfg.enabled) {
       const onVis = () => {
         if (document.visibilityState === "hidden") auto?.flush();
       };
       const onPageHide = () => auto?.flush();
+      const onSwap = () => auto?.flush();
       const onBeforeUnload = (e: BeforeUnloadEvent) => {
         auto?.flush();
         if (dirty()) {
@@ -366,10 +370,12 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
       };
       document.addEventListener("visibilitychange", onVis);
       window.addEventListener("pagehide", onPageHide);
+      document.addEventListener("astro:before-swap", onSwap);
       window.addEventListener("beforeunload", onBeforeUnload);
       onCleanup(() => {
         document.removeEventListener("visibilitychange", onVis);
         window.removeEventListener("pagehide", onPageHide);
+        document.removeEventListener("astro:before-swap", onSwap);
         window.removeEventListener("beforeunload", onBeforeUnload);
       });
     }

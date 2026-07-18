@@ -249,8 +249,70 @@ export interface MountLouiseOptions {
   };
 }
 
+/**
+ * The currently-mounted inline editor's leave hooks, so the shared handlers below
+ * can flush + guard whichever page is active. A soft (view-transition) navigation
+ * replaces `<body>` — and this editor with it — so it's cleared on `astro:after-swap`
+ * and re-set by the next page's `mountLouise`.
+ */
+interface ActiveInline {
+  /** Flush pending auto-saved edits (routes through the raw keepalive fetch). */
+  flush: () => void;
+  /** Whether edits are genuinely unsaved — drives the `beforeunload` guard. */
+  hasDirty: () => boolean;
+  /** Mark the page as leaving so saves use the keepalive fetch, not an Action. */
+  setUnloading: (leaving: boolean) => void;
+}
+let activeInline: ActiveInline | null = null;
+let leaveHandlersWired = false;
+
+/**
+ * Wire the auto-save flush + unsaved-changes guard **once** for the page's lifetime,
+ * delegating to whichever inline editor is currently mounted ({@link activeInline}).
+ * Registering once (rather than per `mountLouise`) means a view-transition re-mount
+ * doesn't stack duplicate `window` listeners.
+ *
+ * - `visibilitychange → hidden` / `pagehide` / `beforeunload` — hard navigations and
+ *   tab-hide. The keepalive fetches let a flush fired here still reach the Worker.
+ * - `astro:before-swap` — Astro **soft** navigations, which fire none of the above;
+ *   without this a view-transition nav would drop pending edits. Flushes before the
+ *   DOM (and the current editor) is swapped away (#74).
+ * - `astro:after-swap` — clears the mount guard (a runtime `<html>` attribute that
+ *   survives the swap) and drops the now-defunct editor, so the next page re-mounts
+ *   cleanly on `astro:page-load`.
+ *
+ * `astro:*` are plain DOM events; in a non-Astro host they simply never fire, so this
+ * stays framework-agnostic.
+ */
+function ensureLeaveHandlers(): void {
+  if (leaveHandlersWired) return;
+  leaveHandlersWired = true;
+  const leave = () => {
+    activeInline?.setUnloading(true);
+    activeInline?.flush();
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") leave();
+    else activeInline?.setUnloading(false);
+  });
+  window.addEventListener("pagehide", leave);
+  window.addEventListener("beforeunload", (e) => {
+    leave();
+    if (activeInline?.hasDirty()) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  });
+  document.addEventListener("astro:before-swap", leave);
+  document.addEventListener("astro:after-swap", () => {
+    delete document.documentElement.dataset.louiseMounted;
+    activeInline = null;
+  });
+}
+
 export function mountLouise(opts: MountLouiseOptions): void {
-  // Idempotent under Astro view-transition re-runs.
+  // Idempotent within a page render; cleared on `astro:after-swap` so a soft
+  // navigation re-mounts the (replaced) body's editor. See {@link ensureLeaveHandlers}.
   if (document.documentElement.dataset.louiseMounted === "1") return;
   document.documentElement.dataset.louiseMounted = "1";
 
@@ -467,30 +529,21 @@ export function mountLouise(opts: MountLouiseOptions): void {
     }
   }
 
-  // Auto-save flush + unsaved-changes guard. `visibilitychange → hidden` is the
-  // reliable "user is leaving" signal (tab switch, mobile background, most
-  // navigations); `pagehide` covers the rest. The keepalive fetches let a flush
-  // fired here still reach the Worker. `beforeunload` adds a last-resort browser
-  // warning while edits are genuinely unsaved. mountLouise runs once per page
-  // lifetime (idempotent guard above), so these window listeners need no teardown.
+  // Point the shared leave/flush handlers (wired once, below) at this mount, so a
+  // tab-hide, hard nav, or Astro soft nav flushes THIS page's pending edits and
+  // routes them through the raw `keepalive` fetch (#138). Only when this page owns
+  // inline fields with auto-save — otherwise there's nothing to flush (a sections
+  // page guards its own edits in the dock).
   if (autoSaveOn && fieldEls.length > 0) {
-    // Mark the page as leaving so the flush routes through the raw `keepalive`
-    // fetch, not an Action (#138). A tab-switch back to visible clears it.
-    const leave = () => {
-      unloading = true;
-      auto?.flush();
+    activeInline = {
+      flush: () => auto?.flush(),
+      hasDirty: () => dirty.size > 0,
+      setUnloading: (leaving) => {
+        unloading = leaving;
+      },
     };
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") leave();
-      else unloading = false;
-    });
-    window.addEventListener("pagehide", leave);
-    window.addEventListener("beforeunload", (e) => {
-      leave();
-      if (dirty.size > 0) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    });
   }
+  // Always wire the shared handlers: even a no-fields editor page needs the
+  // `astro:after-swap` guard-reset so navigating to the next page re-mounts it.
+  ensureLeaveHandlers();
 }

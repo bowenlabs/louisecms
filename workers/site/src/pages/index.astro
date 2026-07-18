@@ -17,6 +17,7 @@ import "louise-toolkit/theme/fonts.css";
 import "../styles/louise.css";
 import "../styles/landing.css";
 import monogram from "../assets/louise-monogram.svg?raw";
+import { ClientRouter } from "astro:transitions";
 import LouiseEditIsland from "../components/LouiseEditIsland.astro";
 import Vitals from "../components/Vitals.astro";
 import Sections from "../components/Sections.astro";
@@ -87,6 +88,10 @@ const FOOTER_NAV = [
       href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wdth,wght@8..144,25..151,100..1000&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    {/* View Transitions (#74): soft-navigate between content pages. Paired with
+        the transition-aware Louise client (flush on astro:before-swap, re-mount
+        on astro:page-load). */}
+    <ClientRouter />
   </head>
   <body class="louise-type min-h-screen bg-base-100 text-base-content antialiased">
     <div class="lt-landing overflow-hidden">

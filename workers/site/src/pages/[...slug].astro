@@ -3,6 +3,7 @@ import { env } from "cloudflare:workers";
 import { LOUISE_EDGE_CACHE } from "astro:env/server";
 import { eq } from "drizzle-orm";
 import { db } from "louise-toolkit/db";
+import { ClientRouter } from "astro:transitions";
 import LouiseEditIsland from "../components/LouiseEditIsland.astro";
 import SiteChrome from "../components/SiteChrome.astro";
 import { publishedPageCache } from "../lib/louise/cache.js";
@@ -63,6 +64,9 @@ const title = page.seoTitle || page.title;
     {page.seoDescription && <meta name="description" content={page.seoDescription} />}
     {page.noindex && <meta name="robots" content="noindex" />}
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    {/* View Transitions (#74): soft-navigate to/from the home page + other
+        content pages without a full reload. */}
+    <ClientRouter />
   </head>
   <body class="louise-type">
     <SiteChrome>

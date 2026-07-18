@@ -255,7 +255,7 @@ export function mountSettings(config: SettingsConfig): void {
   root.id = "louise-drawer-root";
   document.body.appendChild(root);
   const queryClient = createSettingsQueryClient();
-  render(
+  const dispose = render(
     () => (
       <QueryClientProvider client={queryClient}>
         <Settings {...config} />
@@ -263,4 +263,15 @@ export function mountSettings(config: SettingsConfig): void {
     ),
     root,
   );
+  // Astro view transitions (#74) replace <body>, orphaning this drawer while its
+  // window listeners (e.g. the OPEN_SETTINGS_EVENT handler) live on — so a Settings
+  // click after a nav would fire a stale handler. Dispose the Solid root before the
+  // swap; the bootstrap re-mounts a fresh drawer on the next page (astro:page-load).
+  // Harmless in a non-Astro host (the event never fires).
+  const disposeOnSwap = () => {
+    dispose();
+    root.remove();
+    document.removeEventListener("astro:before-swap", disposeOnSwap);
+  };
+  document.addEventListener("astro:before-swap", disposeOnSwap);
 }
