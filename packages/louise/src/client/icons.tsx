@@ -33,6 +33,7 @@ import starFill from "@phosphor-icons/core/assets/fill/star-fill.svg?raw";
 // The four-point sparkle — the conventional "AI assist" affordance (rewrite /
 // SEO suggest, #75/#166).
 import sparkle from "@phosphor-icons/core/assets/regular/star-four.svg?raw";
+import link from "@phosphor-icons/core/assets/regular/link.svg?raw";
 
 export const icons = {
   bold,
@@ -65,6 +66,7 @@ export const icons = {
   star,
   starFill,
   sparkle,
+  link,
 } as const;
 
 export type IconName = keyof typeof icons;

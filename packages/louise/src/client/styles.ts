@@ -10,7 +10,8 @@ import brandFontsCss from "../theme/fonts.css?raw";
 
 const LOUISE_BLUE = "#1481ef";
 
-const CSS = `
+const CSS =
+  `
 :root {
   --louise-blue: ${LOUISE_BLUE};
   --louise-green: #16a34a;
@@ -975,16 +976,11 @@ const CSS = `
 .louise-block-add-menu .louise-slash-item { width: 100%; text-align: left; border: none; background: none; }
 .louise-icon { line-height: 0; }
 .louise-icon svg { width: 100%; height: 100%; display: block; }
-/* Floating selection toolbar (#15): a pill that ProseKit's InlinePopover
-   positions over the current selection, rather than a strip pinned to the top
-   of the field. Layout styling lives here on the inner div; the popup custom
-   element controls its own show/hide. */
-/* Focus-shown formatting toolbar: a floating pill docked just above the caret
-   (top/left set inline from coordsAtPos) so it's there while typing, where you
-   are typing — not pinned to the top of the page. */
-.louise-toolbar-dock {
-  position: fixed;
-  transform: translateY(calc(-100% - 8px));
+/* Format bubble (#182 Phase 5): ProseKit's InlinePopover positions this pill over
+   the current text selection and controls its own show/hide; we only set the
+   stacking context here — the inner pill look lives on `.louise -
+  toolbar`. */
+.louise-format-bubble {
   z-index: 2147483004;
 }
 .louise-toolbar {

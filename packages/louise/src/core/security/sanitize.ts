@@ -96,13 +96,17 @@ const SAFE_URL = /^(?:https?:|mailto:|\/|#|\.)/i;
 
 /** Allowed inline `style` declarations — each a single, value-validated
  *  property. Two are permitted:
- *   • `color:` — the ProseKit text-color mark (hex / rgb(a) / hsl / named).
+ *   • `color:` — the ProseKit text-color mark. A literal (hex / rgb(a) / hsl /
+ *     named) OR a brand token: `var(--color-<token>)`, the daisyUI theme custom
+ *     property the site defines (#182 Phase 5). The token stays theme-aware — a
+ *     re-theme flows through with no content rewrite — and `var(--color-…)` can
+ *     only reference a CSS custom property, so it carries no injection surface.
  *   • `grid-template-columns:` — an adjustable grid row's track list: a
  *     space-separated run of up to 12 numeric tracks (`%`, `fr`, `px`, or
  *     `auto`). No functions, urls, `calc`, or `;`-chaining, so there is no
  *     injection surface — it's a numeric layout value, same spirit as color. */
 const SAFE_COLOR_STYLE =
-  /^\s*color:\s*(?:#[0-9a-f]{3,8}|rgba?\([\d,.\s%]+\)|hsl\([\d,.\s%]+\)|[a-z]+)\s*;?\s*$/i;
+  /^\s*color:\s*(?:#[0-9a-f]{3,8}|rgba?\([\d,.\s%]+\)|hsl\([\d,.\s%]+\)|var\(\s*--color-[a-z-]+\s*\)|[a-z]+)\s*;?\s*$/i;
 const SAFE_GRID_STYLE =
   /^\s*grid-template-columns:\s*(?:\d+(?:\.\d+)?(?:%|fr|px)|auto)(?:\s+(?:\d+(?:\.\d+)?(?:%|fr|px)|auto)){0,11}\s*;?\s*$/i;
 function isSafeStyle(value: string): boolean {

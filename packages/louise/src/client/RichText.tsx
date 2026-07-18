@@ -12,9 +12,9 @@ import {
   type Editor,
   type NodeJSON,
 } from "prosekit/core";
-import { NodeSelection } from "@prosekit/pm/state";
 import { defineBlockquote } from "prosekit/extensions/blockquote";
 import { defineImageUploadHandler, uploadImage } from "prosekit/extensions/image";
+import { defineLink } from "prosekit/extensions/link";
 import { defineTextColor } from "prosekit/extensions/text-color";
 import {
   defineSolidNodeView,
@@ -31,6 +31,7 @@ import {
   BlockHandleRoot,
 } from "prosekit/solid/block-handle";
 import { ResizableHandle, ResizableRoot } from "prosekit/solid/resizable";
+import { InlinePopoverRoot } from "prosekit/solid/inline-popover";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { Icon, type IconName } from "./icons.jsx";
@@ -50,12 +51,22 @@ async function r2ImageUploader({ file }: { file: File }): Promise<string> {
   return data.url;
 }
 
-/** Brand text colors offered by the toolbar swatch popover. */
+/**
+ * Brand text colours offered by the format bubble's swatch popover (#182 Phase 5).
+ * Each is a **daisyUI theme token**, not a fixed hex — the mark stores
+ * `color: var(--color-<token>)`, so it resolves to the SITE's own theme colour at
+ * render and a re-theme flows through with no content rewrite. The swatch preview
+ * uses the same `var()`, so it shows the site's actual colour in the editor.
+ */
 const TEXT_COLORS = [
-  { label: "Rust", value: "#a8482c" },
-  { label: "Plum", value: "#5e3a52" },
-  { label: "Sage", value: "#4f6933" },
-  { label: "Gold", value: "#9a7328" },
+  { label: "Primary", token: "primary" },
+  { label: "Secondary", token: "secondary" },
+  { label: "Accent", token: "accent" },
+  { label: "Neutral", token: "neutral" },
+  { label: "Info", token: "info" },
+  { label: "Success", token: "success" },
+  { label: "Warning", token: "warning" },
+  { label: "Error", token: "error" },
 ] as const;
 
 /**
@@ -98,6 +109,9 @@ function louiseExtension(blocks = false, grammar = false) {
     defineBasicExtension(),
     defineBlockquote(),
     defineTextColor(),
+    // Inline link mark (#182 Phase 5) — surfaced in the format bubble; renders to
+    // `<a href>`, which the sanitizer already allows.
+    defineLink(),
     // Paste/drop an image → upload to R2 and insert (temp URL swapped for the
     // final one when the upload resolves).
     defineImageUploadHandler({ uploader: r2ImageUploader }),
@@ -155,13 +169,14 @@ function Toolbar() {
     italic: e.marks.italic.isActive(),
     underline: e.marks.underline.isActive(),
     strike: e.marks.strike.isActive(),
+    link: e.marks.link.isActive(),
     h2: e.nodes.heading.isActive({ level: 2 }),
     h3: e.nodes.heading.isActive({ level: 3 }),
     bullet: e.nodes.list.isActive({ kind: "bullet" }),
     ordered: e.nodes.list.isActive({ kind: "ordered" }),
     quote: e.nodes.blockquote.isActive(),
-    // `e.view` throws before mount (see ToolbarDock); `e.mounted` never does, so
-    // gate the selection read. Drives the AI-rewrite button's enabled state.
+    // `e.view` throws before mount (assertView); `e.mounted` never does, so gate
+    // the selection read. Drives the AI-rewrite button's enabled state.
     hasSelection: e.mounted && !e.view.state.selection.empty,
   }));
 
@@ -226,9 +241,27 @@ function Toolbar() {
     e.currentTarget.value = "";
   };
 
-  const applyColor = (color: string) => {
-    editor().commands.addTextColor({ color });
+  const applyColor = (token: string) => {
+    editor().commands.addTextColor({ color: `var(--color-${token})` });
     setColorOpen(false);
+  };
+
+  // Link (#182 Phase 5): toggle off if the selection is already linked, else
+  // prompt for a URL. `prompt` keeps the editor's selection intact, so the mark
+  // lands on the right range without a focus dance in the bubble.
+  const editLink = () => {
+    if (active().link) {
+      editor().commands.removeLink();
+      return;
+    }
+    const existing = editor()
+      .view.state.selection.$from.marks()
+      .find((m) => m.type.name === "link");
+    const href = window.prompt("Link URL", (existing?.attrs.href as string) ?? "https://");
+    if (href === null) return;
+    const trimmed = href.trim();
+    if (trimmed) editor().commands.addLink({ href: trimmed });
+    else editor().commands.removeLink();
   };
 
   const Btn = (p: { icon: IconName; on?: boolean; title: string; run: () => void }) => (
@@ -270,6 +303,12 @@ function Toolbar() {
         title="Strikethrough"
         on={active().strike}
         run={() => editor().commands.toggleStrike()}
+      />
+      <Btn
+        icon="link"
+        title={active().link ? "Remove link" : "Add link"}
+        on={active().link}
+        run={editLink}
       />
       <span class="louise-tb-sep" />
       <Btn
@@ -336,9 +375,9 @@ function Toolbar() {
                   class="louise-swatch"
                   title={c.label}
                   aria-label={`Text color ${c.label}`}
-                  style={{ background: c.value }}
+                  style={{ background: `var(--color-${c.token})` }}
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => applyColor(c.value)}
+                  onClick={() => applyColor(c.token)}
                 />
               )}
             </For>
@@ -403,47 +442,6 @@ function Toolbar() {
   );
 }
 
-/**
- * Docks the formatting toolbar next to the caret while the editor is focused, so
- * it's available where you're typing (not only over a highlight, and not pinned
- * to the top of the page). Hidden over a node selection (e.g. a selected button
- * or divider) — there's no text to format and the block has its own controls.
- */
-function ToolbarDock(props: { focused: () => boolean }) {
-  const caret = useEditorDerivedValue((e: Editor<LouiseEditorExtension>) => {
-    // useEditorDerivedValue wraps this in a createMemo that Solid evaluates
-    // EAGERLY during render — before RichText's onMount runs editor.mount(host).
-    // Reading e.view (assertView) before then throws "Editor is not mounted",
-    // and that synchronous throw aborts the whole render(), leaving the field
-    // empty with no editor. Bail while unmounted (e.mounted never throws); the
-    // memo re-runs once mounted (the mount/update handlers force it).
-    if (!e.mounted) return null;
-    const sel = e.view.state.selection;
-    if (sel instanceof NodeSelection) return null;
-    try {
-      const c = e.view.coordsAtPos(sel.head);
-      // Keep the pill on-screen: its left is the caret x, but near the right
-      // edge that would start it off the viewport. CSS caps its width at
-      // calc(100vw - 12px) so it wraps; this stops the left edge from starting
-      // too far right (reserving a wrapped-pill width).
-      const reserve = Math.min(340, window.innerWidth - 16);
-      const left = Math.max(8, Math.min(c.left, window.innerWidth - 8 - reserve));
-      return { top: c.top, left };
-    } catch {
-      return null;
-    }
-  });
-  return (
-    <Show when={props.focused() && caret()}>
-      {(pos) => (
-        <div class="louise-toolbar-dock" style={{ top: `${pos().top}px`, left: `${pos().left}px` }}>
-          <Toolbar />
-        </div>
-      )}
-    </Show>
-  );
-}
-
 export function RichText(props: RichTextProps) {
   const editor = createEditor({
     extension: louiseExtension(props.blocks ?? false, props.grammar ?? false),
@@ -456,18 +454,8 @@ export function RichText(props: RichTextProps) {
 
   // oxlint-disable-next-line no-unassigned-vars -- assigned by Solid's `ref` binding below
   let host!: HTMLDivElement;
-  // oxlint-disable-next-line no-unassigned-vars -- assigned by Solid's `ref` binding below
-  let frame!: HTMLDivElement;
-  // The formatting toolbar shows while the editor is focused (typing OR
-  // selecting), not only over a highlight. Tracked via focusin/focusout on the
-  // frame so clicks on the toolbar (a descendant) keep it open.
-  const [focused, setFocused] = createSignal(false);
   onMount(() => {
     editor.mount(host);
-    frame.addEventListener("focusin", () => setFocused(true));
-    frame.addEventListener("focusout", (e) => {
-      if (!frame.contains(e.relatedTarget as Node | null)) setFocused(false);
-    });
     props.ref?.({
       getJSON: () => editor.getDocJSON(),
       getHTML: () => htmlFromNode(editor.view.state.doc),
@@ -480,9 +468,14 @@ export function RichText(props: RichTextProps) {
 
   return (
     <ProseKit editor={editor}>
-      <div class="louise-rt" ref={frame}>
+      <div class="louise-rt">
+        {/* Format bubble (#182 Phase 5): a floating toolbar that appears over the
+            current text selection (ProseKit InlinePopover), so inline editing on
+            the live page stays clean until the editor highlights text. */}
         <Show when={props.toolbar !== false}>
-          <ToolbarDock focused={focused} />
+          <InlinePopoverRoot class="louise-format-bubble">
+            <Toolbar />
+          </InlinePopoverRoot>
         </Show>
         <div class={props.class ?? "louise-prose-surface"} ref={host} />
         {/* Floating drag handle that appears in the gutter of the hovered

@@ -128,6 +128,26 @@ describe("sanitizeRichHtml", () => {
     ).not.toContain("background");
   });
 
+  it("keeps a brand-token colour mark (var(--color-*)) and the link mark (#182 Phase 5)", () => {
+    // The Phase 5 colour mark stores a daisyUI token, resolved to the site theme.
+    expect(
+      sanitizeRichHtml('<p><span style="color: var(--color-primary)">hi</span></p>'),
+    ).toContain("color: var(--color-primary)");
+    // Inline link mark → <a href> (already allowed).
+    expect(sanitizeRichHtml('<p><a href="https://ok.com">x</a></p>')).toContain(
+      'href="https://ok.com"',
+    );
+  });
+
+  it("only allows var() that references a --color-* custom property", () => {
+    // A non-color var (could reference anything) is dropped.
+    expect(sanitizeRichHtml('<span style="color: var(--evil)">x</span>')).not.toContain("var(");
+    // var() can't smuggle a second declaration or a url().
+    expect(
+      sanitizeRichHtml('<span style="color: var(--color-primary); background: url(x)">x</span>'),
+    ).not.toContain("background");
+  });
+
   it("round-trips a button block (div wrapper keeps class, anchor keeps href)", () => {
     const out = sanitizeRichHtml(
       '<div data-block="button" class="pb-button"><a href="https://x.com">Go</a></div>',
