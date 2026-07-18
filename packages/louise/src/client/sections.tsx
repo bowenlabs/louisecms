@@ -34,9 +34,11 @@ import {
 } from "./chrome.js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { Portal, render } from "solid-js/web";
+import { stegaClean } from "../core/content/stega-clean.js";
 import { type AutoSaveOption, type Autosave, createAutosave, resolveAutoSave } from "./autosave.js";
 import { Icon } from "./icons.jsx";
 import { MediaPicker } from "./media-picker.jsx";
+import { type RichTextField, mountRichText } from "./RichText.jsx";
 import { injectStyles } from "./styles.js";
 
 // The section schema types live in core (server-safe) so the same catalog object
@@ -55,10 +57,13 @@ import type {
 } from "../core/content/sections.js";
 export type { SectionCatalog, SectionDef, SectionField, SectionFieldType, SectionItem };
 
-/** Whether a field is edited in place — only plain text is (default). `array`
- *  and `image` are edited in the dock, so they're non-inline. */
+/** Whether a field is edited in place — plain text and rich text are (default).
+ *  `array` and `image` are edited in the dock/inspector, so they're non-inline. */
 function isInline(field: SectionField): boolean {
-  return field.inline ?? (field.type === "text" || field.type === "textarea");
+  return (
+    field.inline ??
+    (field.type === "text" || field.type === "textarea" || field.type === "richText")
+  );
 }
 
 export interface SectionsEditorProps {
@@ -193,6 +198,25 @@ function wireInline(
   for (const node of Array.from(nodes)) {
     const path = node.dataset.louiseSfield;
     if (!path) continue;
+    // Rich-text section field (#182): mount the light ProseKit editor (inline
+    // formatting bubble only) instead of a plaintext contenteditable, and persist
+    // the field's HTML (stega-cleaned) into the shared store. The save path
+    // sanitizes it (sanitizeSectionsRichText) and the site renders it via set:html
+    // — the same store/marker path, just an HTML value instead of textContent.
+    if (node.dataset.louiseType === "richtext") {
+      node.classList.add("louise-editable", "louise-sfield");
+      let rt: RichTextField;
+      rt = mountRichText(
+        node,
+        () => {
+          set("items", ...pathToArgs(node.dataset.louiseSfield ?? path), stegaClean(rt.getHTML()));
+          onEdit();
+        },
+        undefined,
+        { minimal: true },
+      );
+      continue;
+    }
     const hint = placeholderFor(catalog, path, items);
     if (hint) node.dataset.louisePlaceholder = hint;
     node.classList.add("louise-editable", "louise-sfield");
