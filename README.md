@@ -102,6 +102,49 @@ Louise is pre-1.0, the many subpath exports may still change between minor
 releases; breaking changes ship as a `minor` bump and are called out in the
 changeset.
 
+## Built with
+
+Louise is built on — and grateful for — a lot of excellent open source. Sincere
+thanks to the authors and maintainers of the projects that make it possible:
+
+**Platform & framework** —
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare_Workers-F38020?logo=cloudflareworkers&logoColor=white)](https://workers.cloudflare.com)
+[![Astro](https://img.shields.io/badge/Astro-BC52EE?logo=astro&logoColor=white)](https://astro.build)
+
+**The in-place editor** —
+[![SolidJS](https://img.shields.io/badge/SolidJS-2C4F7C?logo=solid&logoColor=white)](https://www.solidjs.com)
+[![ProseKit](https://img.shields.io/badge/ProseKit-6E56CF?logo=prosemirror&logoColor=white)](https://prosekit.dev)
+[![TanStack Query](https://img.shields.io/badge/TanStack_Query-FF4154?logo=tanstack&logoColor=white)](https://tanstack.com/query)
+[![Harper](https://img.shields.io/badge/Harper-4C6EF5)](https://writewithharper.com)
+
+**Data, auth & validation** —
+[![Drizzle ORM](https://img.shields.io/badge/Drizzle_ORM-C5F74F?logo=drizzle&logoColor=black)](https://orm.drizzle.team)
+[![better-auth](https://img.shields.io/badge/better--auth-000000?logo=betterauth&logoColor=white)](https://www.better-auth.com)
+[![Standard Schema](https://img.shields.io/badge/Standard_Schema-8B5CF6)](https://standardschema.dev)
+
+**Rendering & assets** —
+[![Phosphor Icons](https://img.shields.io/badge/Phosphor_Icons-2B2B2B?logo=phosphoricons&logoColor=white)](https://phosphoricons.com)
+[![Roboto Flex](https://img.shields.io/badge/Roboto_Flex-5C6370)](https://github.com/googlefonts/roboto-flex)
+[![resvg](https://img.shields.io/badge/resvg-5C6370)](https://github.com/yisibl/resvg-js)
+[![ultrahtml](https://img.shields.io/badge/ultrahtml-5C6370)](https://github.com/natemoo-re/ultrahtml)
+
+**Styling** —
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
+[![daisyUI](https://img.shields.io/badge/daisyUI-1AD1A5?logo=daisyui&logoColor=white)](https://daisyui.com)
+
+**Build & quality** —
+[![Vite+](https://img.shields.io/badge/Vite%2B-646CFF?logo=vite&logoColor=white)](https://viteplus.dev)
+[![Rolldown](https://img.shields.io/badge/Rolldown-F04E23?logo=rolldown&logoColor=white)](https://rolldown.rs)
+[![Vitest](https://img.shields.io/badge/Vitest-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev)
+[![oxc](https://img.shields.io/badge/oxc-1F2937?logo=oxc&logoColor=white)](https://oxc.rs)
+[![Biome](https://img.shields.io/badge/Biome-60A5FA?logo=biome&logoColor=white)](https://biomejs.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+
+Also gratefully used: [`@cloudflare/puppeteer`](https://developers.cloudflare.com/browser-rendering/)
+(Browser Rendering) and [`@vercel/stega`](https://github.com/vercel/stega) (visual-edit
+markers). Bundled fonts and icons ship under their original licenses — see
+[THIRD_PARTY_NOTICES](packages/louise/THIRD_PARTY_NOTICES.md).
+
 ## License
 
 [MIT](LICENSE) © BowenLabs
