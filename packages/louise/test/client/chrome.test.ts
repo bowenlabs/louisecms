@@ -1,14 +1,24 @@
-// happy-dom coverage for the on-canvas chrome marker contract (#182 Phase 1):
-// the render stamps `data-louise-section="<i>"` per section; the chrome resolves
-// those markers to elements (ordered by index) and hit-tests a node to its
-// nearest enclosing section.
+// happy-dom coverage for the on-canvas chrome marker contract (#182 Phases 1–2):
+// the render stamps `data-louise-section="<i>"` per section and
+// `data-louise-block="<i>.blocks.<j>"` per block; the chrome resolves those
+// markers to elements (ordered by index), hit-tests a node to its nearest
+// enclosing section/block (deepest wins), draws the two-layer ring + toolbar, and
+// re-stamps both layers through instant reorder/delete.
 
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  BLOCK_MARKER_ATTR,
+  type BlockRef,
+  blockRefOf,
+  deleteBlockElement,
   deleteSectionElement,
+  moveBlockElement,
   moveSectionElement,
   mountSectionChrome,
+  parseBlockMarker,
+  readBlockMarkers,
   readSectionMarkers,
+  restampBlock,
   restampSection,
   SECTION_MARKER_ATTR,
   sectionIndexOf,
@@ -216,5 +226,275 @@ describe("chrome — instant structural ops (#182 Phase 1)", () => {
     moveSectionElement(-1, 0);
     deleteSectionElement(9);
     expect(domTitles()).toEqual(["Title 0", "Title 1"]);
+  });
+});
+
+/** Sections, each carrying `blocksPer` marked blocks. A section has an `<h1>`
+ *  section field and each block a `<div data-louise-block="<i>.blocks.<j>">`
+ *  wrapping an `<h2 data-louise-sfield="<i>.blocks.<j>.heading">` — so both marker
+ *  layers and their field paths are observable through restamps. */
+function hostWithBlocks(sections: number, blocksPer: number): HTMLElement {
+  const el = document.createElement("div");
+  for (let i = 0; i < sections; i++) {
+    const sec = document.createElement("section");
+    sec.setAttribute(SECTION_MARKER_ATTR, String(i));
+    const h1 = document.createElement("h1");
+    h1.setAttribute("data-louise-sfield", `${i}.title`);
+    h1.textContent = `S${i}`;
+    sec.appendChild(h1);
+    for (let j = 0; j < blocksPer; j++) {
+      const blk = document.createElement("div");
+      blk.setAttribute(BLOCK_MARKER_ATTR, `${i}.blocks.${j}`);
+      const h2 = document.createElement("h2");
+      h2.setAttribute("data-louise-sfield", `${i}.blocks.${j}.heading`);
+      h2.textContent = `S${i}B${j}`;
+      blk.appendChild(h2);
+      sec.appendChild(blk);
+    }
+    el.appendChild(sec);
+  }
+  document.body.appendChild(el);
+  return el;
+}
+
+describe("chrome — block marker resolver (#182 Phase 2)", () => {
+  afterEach(() => document.body.replaceChildren());
+
+  it("parses a well-formed block marker and rejects malformed ones", () => {
+    expect(parseBlockMarker("2.blocks.3")).toEqual({ section: 2, block: 3 });
+    expect(parseBlockMarker(null)).toBeNull();
+    expect(parseBlockMarker("2.items.3")).toBeNull(); // wrong middle segment
+    expect(parseBlockMarker("2.blocks")).toBeNull(); // too few parts
+    expect(parseBlockMarker("2.blocks.3.4")).toBeNull(); // too many
+    expect(parseBlockMarker("-1.blocks.0")).toBeNull(); // negative
+    expect(parseBlockMarker("x.blocks.0")).toBeNull(); // non-numeric
+  });
+
+  it("returns marked blocks ordered by (section, block), not DOM order", () => {
+    const el = document.createElement("div");
+    for (const m of ["1.blocks.1", "0.blocks.1", "1.blocks.0", "0.blocks.0"]) {
+      const d = document.createElement("div");
+      d.setAttribute(BLOCK_MARKER_ATTR, m);
+      el.appendChild(d);
+    }
+    document.body.appendChild(el);
+    expect(
+      readBlockMarkers(el as unknown as ParentNode).map((b) => `${b.section}.${b.block}`),
+    ).toEqual(["0.0", "0.1", "1.0", "1.1"]);
+  });
+
+  it("skips malformed block markers", () => {
+    const el = document.createElement("div");
+    for (const m of ["0.blocks.0", "0.items.0", "0.blocks.x"]) {
+      const d = document.createElement("div");
+      d.setAttribute(BLOCK_MARKER_ATTR, m);
+      el.appendChild(d);
+    }
+    document.body.appendChild(el);
+    expect(readBlockMarkers(el as unknown as ParentNode)).toHaveLength(1);
+  });
+
+  it("resolves a descendant to its nearest enclosing block (deepest wins)", () => {
+    const el = hostWithBlocks(2, 2);
+    const inner = el.querySelectorAll("h2")[3]; // S1B1
+    expect(blockRefOf(inner)).toEqual({ section: 1, block: 1 });
+  });
+
+  it("returns null for a node inside a section but outside any block", () => {
+    const el = hostWithBlocks(1, 1);
+    expect(blockRefOf(el.querySelector("h1"))).toBeNull(); // section field, not a block
+    expect(blockRefOf(null)).toBeNull();
+  });
+});
+
+describe("chrome — two-layer toolbar / deepest-boundary (#182 Phase 2)", () => {
+  let dispose: (() => void) | undefined;
+  const calls = {
+    su: [] as number[],
+    bu: [] as BlockRef[],
+    bd: [] as BlockRef[],
+    bdel: [] as BlockRef[],
+  };
+
+  afterEach(() => {
+    dispose?.();
+    dispose = undefined;
+    calls.su = [];
+    calls.bu = [];
+    calls.bd = [];
+    calls.bdel = [];
+    document.body.replaceChildren();
+    document.getElementById("louise-chrome-style")?.remove();
+  });
+
+  const setup = (sections: number, blocksPer: number): HTMLElement => {
+    const el = hostWithBlocks(sections, blocksPer);
+    dispose = mountSectionChrome({
+      onMoveUp: (i) => calls.su.push(i),
+      onMoveDown: () => {},
+      onDelete: () => {},
+      blocks: {
+        onMoveUp: (r) => calls.bu.push(r),
+        onMoveDown: (r) => calls.bd.push(r),
+        onDelete: (r) => calls.bdel.push(r),
+      },
+    });
+    return el;
+  };
+  const sectionToolbar = () =>
+    document.querySelector<HTMLElement>(".louise-chrome-toolbar:not(.louise-block-toolbar)");
+  const blockToolbar = () => document.querySelector<HTMLElement>(".louise-block-toolbar");
+  const blockButtons = () =>
+    [...(blockToolbar()?.querySelectorAll("button") ?? [])] as HTMLButtonElement[];
+  const over = (node: Node) => node.dispatchEvent(new Event("mouseover", { bubbles: true }));
+
+  it("hovering a block rings it blue and opens the block toolbar, not the section", () => {
+    const el = setup(1, 2);
+    const block = el.querySelectorAll(`[${BLOCK_MARKER_ATTR}]`)[1]; // S0B1
+    over(block.querySelector("h2") as Node);
+    expect(block.classList.contains("louise-block-active")).toBe(true);
+    expect(el.querySelector("section")?.classList.contains("louise-chrome-active")).toBe(false);
+    expect(blockToolbar()?.dataset.open).toBe("1");
+    expect(sectionToolbar()?.dataset.open).toBe("0");
+  });
+
+  it("hovering section content outside a block rings the section, clearing any block", () => {
+    const el = setup(1, 2);
+    const block = el.querySelectorAll(`[${BLOCK_MARKER_ATTR}]`)[0];
+    over(block.querySelector("h2") as Node); // block first
+    over(el.querySelector("h1") as Node); // then the section-level field
+    expect(el.querySelector("section")?.classList.contains("louise-chrome-active")).toBe(true);
+    expect(block.classList.contains("louise-block-active")).toBe(false);
+    expect(sectionToolbar()?.dataset.open).toBe("1");
+    expect(blockToolbar()?.dataset.open).toBe("0");
+  });
+
+  it("wires the block toolbar buttons to the block actions with the hovered ref", () => {
+    // A middle block (index 1 of 3) so move-up and move-down are both enabled.
+    const el = setup(1, 3);
+    over(el.querySelectorAll(`[${BLOCK_MARKER_ATTR}]`)[1].querySelector("h2") as Node); // S0B1
+    const [up, down, del] = blockButtons();
+    up.click();
+    down.click();
+    del.click();
+    const ref = { section: 0, block: 1 };
+    expect(calls.bu).toEqual([ref]);
+    expect(calls.bd).toEqual([ref]);
+    expect(calls.bdel).toEqual([ref]);
+  });
+
+  it("disables block move-up on the first block and move-down on the last", () => {
+    const el = setup(1, 3);
+    const blocks = el.querySelectorAll(`[${BLOCK_MARKER_ATTR}]`);
+    over(blocks[0].querySelector("h2") as Node);
+    expect(blockButtons()[0].disabled).toBe(true); // up disabled on first
+    expect(blockButtons()[1].disabled).toBe(false);
+    over(blocks[2].querySelector("h2") as Node);
+    expect(blockButtons()[0].disabled).toBe(false);
+    expect(blockButtons()[1].disabled).toBe(true); // down disabled on last
+  });
+
+  it("keeps the block active while hovering the block toolbar", () => {
+    const el = setup(1, 1);
+    over(el.querySelector(`[${BLOCK_MARKER_ATTR}]`)?.querySelector("h2") as Node);
+    const tb = blockToolbar();
+    if (!tb) throw new Error("no block toolbar");
+    over(tb);
+    expect(tb.dataset.open).toBe("1");
+  });
+
+  it("a section-only chrome (no block actions) ignores block markers", () => {
+    const el = hostWithBlocks(1, 1);
+    dispose = mountSectionChrome({
+      onMoveUp: (i) => calls.su.push(i),
+      onMoveDown: () => {},
+      onDelete: () => {},
+    });
+    expect(blockToolbar()).toBeNull(); // no block toolbar created
+    over(el.querySelector(`[${BLOCK_MARKER_ATTR}]`)?.querySelector("h2") as Node);
+    // Hovering a block falls back to ringing its enclosing section.
+    expect(el.querySelector("section")?.classList.contains("louise-chrome-active")).toBe(true);
+  });
+});
+
+describe("chrome — instant block ops (#182 Phase 2)", () => {
+  const blockText = (el: Element) => el.querySelector("h2")?.textContent;
+  const blockMarkers = (section: number) =>
+    readBlockMarkers()
+      .filter((b) => b.section === section)
+      .map((b) => b.el.getAttribute(BLOCK_MARKER_ATTR));
+  const markerOfBlockText = (text: string) =>
+    [...document.querySelectorAll(`[${BLOCK_MARKER_ATTR}]`)]
+      .find((b) => b.querySelector("h2")?.textContent === text)
+      ?.getAttribute(BLOCK_MARKER_ATTR);
+  const sfieldOfBlockText = (text: string) =>
+    [...document.querySelectorAll(`[${BLOCK_MARKER_ATTR}]`)]
+      .find((b) => b.querySelector("h2")?.textContent === text)
+      ?.querySelector("h2")
+      ?.getAttribute("data-louise-sfield");
+
+  afterEach(() => document.body.replaceChildren());
+
+  it("restampBlock re-stamps the block marker and its field path", () => {
+    const el = hostWithBlocks(1, 3);
+    const blk = el.querySelectorAll(`[${BLOCK_MARKER_ATTR}]`)[2]; // S0B2
+    restampBlock(blk as HTMLElement, 0, 0);
+    expect(blk.getAttribute(BLOCK_MARKER_ATTR)).toBe("0.blocks.0");
+    expect(blk.querySelector("h2")?.getAttribute("data-louise-sfield")).toBe("0.blocks.0.heading");
+  });
+
+  it("moveBlockElement relocates within the section and re-stamps 0…n-1", () => {
+    hostWithBlocks(1, 3); // S0B0, S0B1, S0B2
+    moveBlockElement(0, 0, 2);
+    expect([...document.querySelectorAll(`[${BLOCK_MARKER_ATTR}]`)].map(blockText)).toEqual([
+      "S0B1",
+      "S0B2",
+      "S0B0",
+    ]);
+    expect(blockMarkers(0)).toEqual(["0.blocks.0", "0.blocks.1", "0.blocks.2"]);
+    expect(sfieldOfBlockText("S0B0")).toBe("0.blocks.2.heading"); // moved block re-pathed
+  });
+
+  it("deleteBlockElement removes the block and re-stamps survivors gaplessly", () => {
+    hostWithBlocks(1, 3);
+    deleteBlockElement(0, 1); // remove S0B1
+    expect([...document.querySelectorAll(`[${BLOCK_MARKER_ATTR}]`)].map(blockText)).toEqual([
+      "S0B0",
+      "S0B2",
+    ]);
+    expect(blockMarkers(0)).toEqual(["0.blocks.0", "0.blocks.1"]);
+    expect(sfieldOfBlockText("S0B2")).toBe("0.blocks.1.heading"); // shifted 2 → 1
+  });
+
+  it("block ops are scoped to their own section", () => {
+    hostWithBlocks(2, 2); // section 0 + section 1, two blocks each
+    moveBlockElement(0, 0, 1); // reorder section 0 only
+    expect(markerOfBlockText("S0B0")).toBe("0.blocks.1");
+    expect(markerOfBlockText("S0B1")).toBe("0.blocks.0");
+    // Section 1's blocks are untouched.
+    expect(markerOfBlockText("S1B0")).toBe("1.blocks.0");
+    expect(markerOfBlockText("S1B1")).toBe("1.blocks.1");
+  });
+
+  it("a section reorder re-stamps its nested block markers to the new section index", () => {
+    hostWithBlocks(2, 2);
+    moveSectionElement(0, 1); // section 0 (S0*) moves to index 1
+    expect(markerOfBlockText("S0B0")).toBe("1.blocks.0");
+    expect(markerOfBlockText("S0B1")).toBe("1.blocks.1");
+    expect(sfieldOfBlockText("S0B0")).toBe("1.blocks.0.heading");
+    // The section that moved up to index 0 gets its blocks re-stamped too.
+    expect(markerOfBlockText("S1B0")).toBe("0.blocks.0");
+  });
+
+  it("out-of-range block ops are no-ops", () => {
+    hostWithBlocks(1, 2);
+    moveBlockElement(0, 0, 5);
+    moveBlockElement(0, -1, 0);
+    deleteBlockElement(0, 9);
+    deleteBlockElement(5, 0);
+    expect([...document.querySelectorAll(`[${BLOCK_MARKER_ATTR}]`)].map(blockText)).toEqual([
+      "S0B0",
+      "S0B1",
+    ]);
   });
 });
