@@ -237,3 +237,24 @@ describe("parseModelJson", () => {
     if (!r.ok) expect(r.violations.map((v) => v.path)).toContain("description");
   });
 });
+
+describe("louise-toolkit/content/define — drizzle-free entry", () => {
+  it("exports the describe-content surface", async () => {
+    const mod = await import("../../src/core/content/define.js");
+    expect(typeof mod.defineCollection).toBe("function");
+    // The value exports that live in types.ts and ship through this entry too.
+    expect(typeof mod.flattenFields).toBe("function");
+    expect(typeof mod.flattenDoc).toBe("function");
+    expect(typeof mod.nestDoc).toBe("function");
+  });
+
+  it("defines a collection identically to the barrel", async () => {
+    const define = await import("../../src/core/content/define.js");
+    const barrel = await import("../../src/core/content/index.js");
+    const config = {
+      slug: "pages",
+      fields: { title: { type: "text" as const } },
+    };
+    expect(define.defineCollection(config)).toEqual(barrel.defineCollection(config));
+  });
+});

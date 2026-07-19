@@ -67,6 +67,11 @@
       "import": "./dist/core/content/index.js",
       "default": "./dist/core/content/index.js"
     },
+    "./content/define": {
+      "types": "./dist/core/content/define.d.ts",
+      "import": "./dist/core/content/define.js",
+      "default": "./dist/core/content/define.js"
+    },
     "./editor": {
       "types": "./dist/core/editor/index.d.ts",
       "import": "./dist/core/editor/index.js",
