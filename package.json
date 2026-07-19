@@ -14,7 +14,7 @@
     "lint:astro:fix": "biome lint --write .",
     "lint:solid": "npx --yes -p oxlint@1.73.0 -p eslint-plugin-solid@0.14.5 oxlint packages/louise/src/client",
     "knip": "knip",
-    "test": "vp run louise#test",
+    "test": "vp run louise#test && vp run astroid#test",
     "dev": "vp run site#dev",
     "changeset": "changeset",
     "release": "changeset publish"

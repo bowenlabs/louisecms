@@ -5,6 +5,7 @@
 // non-placeholder secret AND a real (non-test) site key. Provisioning one
 // without the other keeps sign-in working instead of locking the owner out.
 
+import { readSecret } from "../security/index.js";
 import type { LouiseAuthEnv } from "./types.js";
 
 /** Sentinel for a not-yet-configured Turnstile secret — keeps captcha OFF. */
@@ -21,13 +22,8 @@ export function turnstileSiteKey(env: LouiseAuthEnv): string | null {
 }
 
 /** The stored Turnstile secret, or null while it's the placeholder/unreadable. */
-export async function turnstileSecret(env: LouiseAuthEnv): Promise<string | null> {
-  try {
-    const value = await env.TURNSTILE_SECRET.get();
-    return value && value !== TURNSTILE_PLACEHOLDER ? value : null;
-  } catch {
-    return null;
-  }
+export function turnstileSecret(env: LouiseAuthEnv): Promise<string | null> {
+  return readSecret(env.TURNSTILE_SECRET, { placeholder: TURNSTILE_PLACEHOLDER });
 }
 
 /** The secret to enforce captcha with, or null to keep it OFF (needs a real

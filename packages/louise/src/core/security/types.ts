@@ -48,6 +48,10 @@ export type RateLimitBackend = KVLike | RateLimiterBinding;
  * widens this into the full `LouiseAuthEnv` surface.
  */
 export interface LouiseEnv {
-  /** Session-signing secret (Secrets Store). Used by `getSessionSecret`. */
-  SESSION_SECRET: SecretBinding;
+  /**
+   * Session-signing secret. Either a Secrets Store binding or the plain string a
+   * `wrangler secret put` produces — `getSessionSecret` reads both, so a site
+   * picks whichever it provisioned rather than the one Louise happened to name.
+   */
+  SESSION_SECRET: SecretBinding | string;
 }
