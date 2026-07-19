@@ -1,5 +1,476 @@
 # louise-toolkit
 
+## 0.14.0
+
+### Minor Changes
+
+- c182412: Wire the Workers AI editorial assists (#75) into the editor UI (#166) — the interactive half of the inline assists, completing #75.
+
+  - **Rich-text toolbar "rewrite" control** (`client/RichText.tsx`): a sparkle menu (Tighten / Rephrase / Simplify / Fix) that POSTs the current selection to `/api/louise/ai/rewrite` and swaps in the result. Enabled only over a real selection; a model hiccup (502) leaves the original text untouched.
+  - **SEO "Suggest" button in the Pages panel** (`client/settings/pages-panel.tsx`): POSTs the page's title + body text to `/api/louise/ai/seo` and pre-fills the SEO title/description for review — set as dirty edits, never auto-committed, so the owner still presses Save.
+  - New `sparkle` icon (the four-point AI affordance).
+
+  Both controls are opt-in and degrade gracefully: the moment a call returns 503 (the `AI` binding isn't provisioned) the control retires itself, consistent with the `core/ai` ethos. The server helpers + `aiRoute` already shipped (#150/#151/#154); a host mounts `aiRoute` to enable them.
+
+- 56821bc: Route the Workers AI helpers through [AI Gateway](https://developers.cloudflare.com/ai-gateway/) (#87) — response caching, cost caps / rate limiting, provider fallback, retries, and request logging in front of every call, without changing the module's contract.
+
+  - New `AiGatewayOptions` (`{ id, cacheKey?, cacheTtl?, skipCache? }`) — a `gateway?` option on `generateAltText` / `rewriteText` / `suggestSeo` (and their `AltTextOptions` / `RewriteOptions` / `SeoOptions`), threaded to Workers AI's `run` as `options.gateway`.
+  - `aiRoute` gains a `gateway?: (env) => AiGatewayOptions | undefined` accessor for the rewrite/SEO calls; the media route's alt text picks it up via `altTextOptions.gateway`.
+
+  Gateway caching already keys on the full request (model + inputs), so identical calls dedupe automatically — `cacheKey` is only for deliberately widening a cache entry. Omit `gateway` and calls go direct; the gateway is purely additive. See the new `guide/ai-assists.md` for setup (creating a gateway, cost caps, and fallback).
+
+- 6fa4f98: Extend `louise-toolkit/ai` with text assists and expose them over HTTP via a new `aiRoute` (#75). The editor client can't call `env.AI` directly (server-only binding), so rewrite/SEO round-trip through the Worker.
+
+  - **`rewriteText(runner, text, { mode })`** — tighten / rephrase / simplify / fix a passage. Best-effort (null on absent binding, blank input, or model error), with model preamble/quotes stripped from the result.
+  - **`suggestSeo(runner, content)`** — an SEO title (≤60) + meta description (≤155) parsed from the model's JSON reply (tolerant of prose/code-fence wrapping), length-capped, missing fields → null.
+  - **`aiRoute({ resolveEditor, ai })`** — editor-guarded route:
+    - `POST /api/louise/ai/rewrite` `{ text, mode? }` → `{ text }`
+    - `POST /api/louise/ai/seo` `{ content }` → `{ title, description }`
+    - Opt-in + degrade: `ai: (env) => env.AI`; when it returns `undefined` the route answers `503` so the client can hide the assist. Each call is a same-origin, session-guarded mutation (it spends AI budget).
+
+  This is the tested server foundation both remaining #75 consumers call — the ProseKit rewrite toolbar and the settings SEO panel — which land as follow-up client PRs.
+
+- 0039440: Editor Actions (`louiseSaveAction` / `louiseSaveDraftAction` / `louiseSettingsAction`) now require an injected `getEnv` and no longer default to `locals.runtime.env`.
+
+  Astro v6+ removed `Astro.locals.runtime.env`, so the old default (`ctx.locals.runtime?.env`) resolved to `undefined` under the library's own supported peer (`astro ^7`) — every consumer relying on it 500-ed ("Astro.locals.runtime.env has been removed in Astro v6"). Rather than have the library reach for `cloudflare:workers` itself (the core primitives take their bindings by dependency injection — the library never imports the CF runtime as a value), `getEnv` is now a required dep. Inject the Worker env explicitly, the same way the site reads its bindings:
+
+  ```ts
+  import { env } from "cloudflare:workers";
+  import { louiseSaveAction } from "louise-toolkit/astro";
+
+  louiseSaveAction({ collections, ActionError, getEnv: () => env });
+  ```
+
+  A missing `getEnv` is now a compile error (it's a required field) and, for untyped callers, throws a clear error at action-construction time instead of a per-request 500. `getEditor` still defaults to `locals.editor`, and `EditorActionContext` no longer carries `locals.runtime` since the toolkit doesn't read it.
+
+- 3146ec8: Add `louiseSaveAction` — the editor `save` mutation (#72) as an Astro Action: a typed, Zod-validated server function so a site calls `actions.louise.save(...)` and gets end-to-end types + automatic input validation, instead of hand-building a `fetch("/api/louise/save")` JSON body and re-parsing it server-side.
+
+  `louise-toolkit/astro` now exports `louiseSaveAction(config)`, which returns the `{ input, handler }` a site drops into `defineAction`. Because `defineAction`/`ActionError` live in Astro's virtual `astro:actions` module (only resolvable inside an Astro app), the toolkit ships the ingredients and the site assembles the action — mirroring `createLouiseMiddleware` — taking the `ActionError` class by injection so the handler still throws framework-correct 400/401/404.
+
+  ```ts
+  // site: src/actions/index.ts
+  import { defineAction, ActionError } from "astro:actions";
+  import { louiseSaveAction } from "louise-toolkit/astro";
+
+  export const server = {
+    louise: {
+      save: defineAction(louiseSaveAction({ collections, ActionError })),
+    },
+  };
+  ```
+
+  The store path is shared with the raw `saveRoute` via a new pure `applyFieldSave` (allowlist + sanitize + D1 write), so a field is validated once per adapter and written in exactly one place — no double-parsing. CSRF stays with Astro's built-in same-origin guard for Action POSTs; the adapter ports only the editor-session (auth) check. The raw `/api/louise/save` route is unchanged and remains the fallback for non-Astro consumers and the keepalive auto-save client.
+
+- afe5ba1: Add `louiseSaveDraftAction` — the editor `saveDraft` mutation (#72) as an Astro Action, completing the editor-mutation Action surface alongside `louiseSaveAction` and `louiseSettingsAction`. A site calls `actions.louise.saveDraft({ id, data })` to stage a versioned-page draft; the input bundles the row `id` with the changed fields (an Action call has no URL to carry the id).
+
+  The store path is shared with the raw `versionsRoute` (POST `/:id/versions`) via a new pure `applySaveDraft` — the concurrent-surface merge base (KV buffer → newest pending draft → live row) and the #70 KV write-buffer — so the draft-merge logic lives in one place. `VersionsRouteConfig` now extends a `SaveDraftDeps` base that the Action config also extends. The handler returns the route's JSON body (a created `version`, or `{ buffered: true }` when a write is coalesced). The raw route is unchanged and remains the fallback for the keepalive auto-save client.
+
+- c39466b: Add `louiseSettingsAction` — the editor `settings` mutation (#72) as an Astro Action, mirroring `louiseSaveAction`: a site drops `defineAction(louiseSettingsAction({ ...settingsConfig, ActionError }))` into `src/actions/index.ts` and calls `actions.louise.settings(patch)` with a typed, Zod-validated patch object.
+
+  The store path is shared with the raw `settingsRoute` via a new pure `applySettingsPatch` (media-strictness on image keys, base-column vs `custom` partition, singleton write) — so a patch is validated once per adapter and merged/written in exactly one place. The handler returns the `ignored` (non-allowlisted) keys, and the shared editor-Action plumbing (`EditorActionDeps`, injected `ActionError`, `locals.editor` auth guard, injected `getEnv` binding resolution) is now factored so further editor Actions follow the same shape. The raw `/api/louise/settings` route is unchanged.
+
+- c6052d3: Close out the remaining pre-publish audit findings — security hardening, cache/read efficiency, and the last accessibility gaps.
+
+  **Security.** `editorsRoute`'s "can't remove the last editor" guard counted every row in the user table; on a site that also stores customers there (email/password auth shares Better Auth's table) that over-counts, letting the final admin delete themselves and lock everyone out. It now counts `role = 'admin'` — the same test the magic-link allowlist uses. The edit-mode cookie is now `secure` over https (still not a control — the session is re-verified every request — but no reason to ship it plaintext-only).
+
+  **Efficiency.** `applySaveDraft` read the full version list from D1 on _every_ autosave tick and then discarded it whenever a KV write-buffer existed. The buffer read now comes first and gates that query, so a burst of edits stops paying for a version list per debounce tick (the live-row lookup stays — the 404 check needs it). Separately, the edge cache keyed on the raw URL, so `?utm_source=…` and friends minted a fresh entry per campaign link — exactly the traffic burst a cache should absorb. The new `edgeCacheKeyUrl` strips known tracking params and sorts the rest; only the _key_ is normalized, so a page that reads its own query string is unaffected.
+
+  **Accessibility.** `role="toolbar"` on the edit bar and the formatting bubble now actually implements arrow-key roving (←/→, Home/End) instead of just advertising it. Icon-only controls get a deliberate `:focus-visible` ring rather than relying on the UA default against coloured fills. The dashboard summary is a real `<h2>`, so the `<h3>` cards below it no longer skip a heading level.
+
+  **Docs that were wrong.** `theme/fonts.css` now warns that its inlined face makes the stylesheet render-blocking and is meant for editor surfaces, not public pages. `semanticSearch` documents that it's the one path sending _visitor_ text to Workers AI. The `grammar` option documents Harper's ~10MB WASM download. The `louise-dark` theme documents that it does not restyle the injected editor chrome.
+
+- 9f5ac5d: Add multi-editor tenancy to `louise-toolkit/auth` via the Better Auth organization plugin (#100) — multiple editors/roles per organization and a path to multi-tenant hosting, gated by the same generated-never-hand-rolled schema contract as the rest of auth.
+
+  - **`LouiseAuthConfig.organizations`** (`{ teams?, allowUserToCreateOrganization? }`) enables the `organization` plugin in the request-scoped factory. When set, its `organization`/`member`/`invitation` tables (plus `team`/`teamMember` with `teams`) are namespaced under `tablePrefix` alongside user/session, so the runtime queries exactly the tables the generator emits.
+  - **`AuthSchemaConfig.organizations`** (`{ teams? }`) threads the same plugin into `authSchemaOptions`, so `generateAuthSchemaSql` (and `louise gen-auth-schema`) emit the org tables + the `activeOrganizationId`/`activeTeamId` session columns, FKs resolving to the prefixed targets. Only `teams` affects the schema; the runtime-only knob is omitted. Mirror this on the CLI config whenever `LouiseAuthConfig.organizations` is set.
+  - **`resolveOrgEditor(auth, db, request, { organizationId, editorRoles?, tablePrefix? })`** — a second editor-access axis beside the global admin allowlist: it returns an `OrgEditorSession` when the signed-in user holds an editor role (`owner`/`admin` by default, `DEFAULT_ORG_EDITOR_ROLES`) in the given org, else `null`. Membership is read from the Better Auth `member` table over D1 (no version-specific server API), so it drops straight into `editorsRoute`/`guardEditor` as a `resolveEditor`. The site decides which org a request maps to — the sole org for a single site, or per-hostname for multi-tenant hosting.
+  - **`activeOrganizationId(auth, request)`** — convenience reader for the session's active organization (single-site case).
+  - **Member-invitation email** — set `organizations.renderInvitationEmail` (mirrors `renderMagicLinkEmail`) to turn on invite emails: the factory builds the accept `url` from the invitation id + `acceptInvitationPath` (default `/organization/accept-invitation`), renders with the site's branding, and sends over the `EMAIL` binding; dev logs the link. Omit it and invitations are still created and acceptable through the API. The URL builder is exported as `invitationAcceptUrl` (Better Auth hands back only the invitation id, so the app constructs the link).
+
+  Enabling `organizations` is additive and opt-in: a single-editor site is unchanged, and a newly-invited org member gets the global role `user` while their edit rights come from membership — the two access tiers coexist.
+
+- 698e230: `mountLouise` can route the inline auto-save through typed Astro Actions, with a keepalive escape hatch for the unload path (#138, completing #72). Pass `actions: { save, saveDraft }` — the site injects `actions.louise.save` / `actions.louise.saveDraft` (which it can import from `astro:actions`; this framework-agnostic client can't). The **normal debounced** save then calls the Action; the **unload** flush (tab-hide / page-hide / `beforeunload`) still uses the raw `keepalive` fetch, since Astro's action client can't set `keepalive` and a save fired mid-navigation would be dropped.
+
+  Fully backward compatible: omit `actions` and every save stays on the raw `/api/louise/*` routes exactly as before. Each injected callable must resolve on success and reject on failure (the site wraps the action's `{ data, error }`).
+
+  Scoped to the inline field + inline versioned-draft surfaces. The sections dock and the reference-site wiring follow separately (the dock surfaces per-field validation detail the Action adapter doesn't carry yet).
+
+- 077b323: Blocks can now be **added** in place (#182 Phase 3 / ADR 0005 §4). The on-canvas block toolbar gains a `+` (add block after) button, and `mountSections` takes an optional `blocks` (`BlockCatalog`) so the editor knows a section's block palette. Adding a block inserts a blank of the section's allowed type, re-renders the whole section through the fragment route (blocks render inside their section's bespoke component, not standalone), swaps the section element in place, re-stamps + re-wires it, and stages a draft — no reload. New `replaceSectionElement(index, el)` in `louise-toolkit/client` swaps a re-rendered section in place. The `+` and the `blocks` catalog are both opt-in: without them the block toolbar stays move + delete only (the Phase 2 behaviour), and a multi-type block picker is a later slice (single-`allow` sections add their one type).
+- aa020ca: On-canvas **block chrome** — the block-layer half of the editing chrome (#182 Phase 2 / ADR 0005 §3–4). `client/chrome.ts` now reads the `data-louise-block="<i>.blocks.<j>"` marker alongside the section marker and draws a second, **blue** ring + toolbar over the hovered block. Hit-testing is **deepest-boundary-wins**: a hover inside a block lights the block and clears its parent section, so exactly one layer rings at a time — the ADR's `:has()` suppression done in JS (no `:has()` dependency, fully unit-testable). New readers: `parseBlockMarker`, `readBlockMarkers`, `blockRefOf` (+ `BlockRef` / `MarkedBlock`). `mountSectionChrome` gains an optional `blocks` action set (`BlockChromeActions`, keyed by `BlockRef`); omitting it keeps the Phase 1 section-only behaviour. Instant within-section block ops mirror the section ops: `moveBlockElement` / `deleteBlockElement` reorder/remove already-rendered blocks and re-stamp the survivors, and `restampSection` now also re-stamps a moved section's nested block markers so a section reorder keeps its blocks' `<i>` aligned. Reader/renderer half only — the editor wires the block callbacks to its store + autosave once a section renders blocks (the reference slice).
+- 47df5c4: Bundle the brand font instead of fetching it from Google Fonts. Roboto Flex (the
+  `wght` axis, latin subset) is now base64-inlined into `theme/fonts.css` and baked
+  into the editor chrome bundle (`client/styles.ts` pulls it in with `?raw`, like
+  the Phosphor icons) — so Louise surfaces make **no third-party font request** and
+  work offline / under strict CSP.
+
+  The `@import url("https://fonts.googleapis.com/…")` in `theme/fonts.css` and the
+  runtime Google Fonts `<link>` + `preconnect`s in `injectStyles()` are gone.
+
+  **Migration:** if you set a strict `font-src` in your CSP, allow `data:` (the
+  inlined `@font-face` uses a `data:` URL). You no longer need `https://fonts.googleapis.com`
+  in `style-src` or `https://fonts.gstatic.com` in `font-src` for the brand type.
+
+- 15ed27c: Schema-validate commerce webhook payloads and add structured-output parsing (#97, #99).
+
+  - `louise-toolkit/schema`: new `s.array(item, { min, max })` builder primitive (element issues re-path under their index, mirroring `s.object`), plus `parseJson`, `extractJson`, and `parseModelJson` — validate a raw JSON string against a schema without throwing, and pull the first balanced JSON object/array out of LLM prose (respecting strings/escapes) instead of slicing on the first/last brace. Malformed JSON and shape mismatches both come back as violations, so callers keep one graceful-degrade branch.
+  - `louise-toolkit/commerce`: new `parseWebhookEvent(schema, rawBody)` — run it **after** `verify…Signature` to prove the payload's shape (the HMAC only proves the sender). Each provider module exports its event envelope schema: `stripeWebhookEventSchema`, `squareWebhookEventSchema`, and `fourthwallOrderEventSchema`. The Fourthwall order-body aliases stay tolerant in `mapFourthwallOrder` (a strict inner schema would drop a live order on shape drift).
+
+- 4d2de4c: Astro Content Layer loader — expose Louise D1 collections through native `getCollection()` (#92).
+
+  - New `louise-toolkit/astro` exports: `louiseLoader({ collection, read, idOf?, name? })` returns an Astro Content Layer `Loader`, and `collectionToAstroSchema(collection)` derives a Zod schema straight from a `defineCollection`'s fields (text/select/number/date/checkbox/relationship/group → typed; richText/array/json pass through; `hasMany` relationships and bookkeeping columns dropped). Register it with Astro's `defineCollection({ loader })` and read published content via `getCollection`/`getEntry`, typed from the collection's own fields — no hand-written schema.
+  - Content Layer loaders run at **build time** (in Node, off any Worker binding), so — like `defineCatalogLoader` — the D1 read is injected: a site supplies `read()` (typically the D1 REST API at build, or a snapshot). The result is a build-time snapshot of published content (rebuild on publish to refresh); for request-time freshness, keep reading D1 in an SSR page. The loader owns schema mapping, store population, content digests for incremental builds, and fail-safe error handling (a read failure keeps the last good store rather than emptying the collection).
+
+  Site: `workers/site` gains an example — `src/content.config.ts` registers a `publishedPages` collection via `louiseLoader(pagesCollection, readPublishedPages)`, with a D1 REST read (`src/lib/louise/published-pages.ts`) gated on `CF_ACCOUNT_ID` / `CF_D1_DATABASE_ID` / `CF_API_TOKEN` (unset → the collection builds empty).
+
+- aa0f70d: Add `louise-toolkit/ai` — optional Workers AI editorial assists (#75), starting with AI alt text on image upload. A new, catalog-agnostic `AiRunner` contract (`run(model, inputs)` — `env.AI` satisfies it directly, no cast) plus best-effort helpers that **degrade gracefully**: with no binding, or on any model error, they return `null` and never throw, so a save/upload/publish is never blocked by AI.
+
+  - `runAi(runner, model, inputs)` — run a model best-effort (null when absent or on error).
+  - `generateAltText(runner, imageBytes, opts)` — concise alt text for an image, tidied (whitespace-collapsed, "an image of…" lead-ins stripped, sentence-cased, length-capped).
+
+  The media route gains an opt-in `altText` accessor that fills each upload's `alt` from the image — off by default (no upload latency or cost unless wired), mirroring the `deferReindex`/`bufferKv` pattern:
+
+  ```ts
+  mediaRoute({
+    table: media,
+    resolveEditor,
+    altText: (env) => env.AI, // opt in; needs the `ai` binding in wrangler.jsonc
+  });
+  ```
+
+  The model id is passed as a string (not pinned to a workers-types model catalog), leaving room to route `run` through AI Gateway later (#87). This is the foundation for the rest of #75 (rewrite toolbar, SEO suggestions) and the AI cluster (#86/#106/#107).
+
+- a89ad95: `createLouiseMiddleware` now auto-allows `data:` fonts in the response CSP, so
+  the bundled brand font (an inlined `data:` `@font-face`) works under a strict
+  `font-src` with **no consumer change** — resolving the migration note from the
+  font-bundling change. It adds `data:` to an existing `font-src` (idempotent), or
+  derives one from `default-src` when none is set; it's a no-op without a CSP
+  header or when `data:` fonts are already allowed.
+
+  Also exported as `allowCspDataFonts(response)` from `louise-toolkit/security`
+  for sites that assemble their own middleware.
+
+- 10519f3: Add the Core Web Vitals piece of the site-health co-pilot (#106) on Cloudflare Analytics Engine — owned, cookieless, real-visitor performance, surfaced as a plain "Fast / Slow" badge in the Health panel.
+
+  New `louise-toolkit/analytics` module:
+  - **`cwvBeaconScript(opts)`** — a self-contained, dependency-free JS beacon to inline on public pages. Observes LCP, CLS, and (approximate) INP via `PerformanceObserver` and reports each once, on `visibilitychange`, via `sendBeacon`. Cookieless; optional `sampleRate`.
+  - **`vitalsRoute`** — the public `POST /api/louise/vitals` ingestion route: **same-origin only** (a cross-origin `Origin` is refused), validates the payload, and writes an Analytics Engine data point (metric as index, page as blob, value as double). Always `204`; a malformed payload or unprovisioned dataset is accepted-and-dropped, so it's cleanly optional.
+  - **Query + summary** — `cwvSqlQuery(dataset, sinceHours)` builds the AE SQL for the p75 of each metric (sampling-aware via `quantileWeighted`/`_sample_interval`); `parseCwvRows` + `summarizeCwv` reduce it to a `CwvSummary` (per-metric p75 + an overall rating = the worst present metric, per Google's thresholds), or `"none"` when there's no field data.
+  - `HealthSummary` gains an optional `cwv` slice, and the Health panel renders a **Performance** section — a "Fast / Could be faster / Slow" badge plus plain-language Loading / Responsiveness / Visual-stability figures, or "not measured yet" until data arrives.
+
+  This is the library layer (fully unit-tested); wiring it on a site — inlining the beacon, binding an Analytics Engine dataset, mounting `vitalsRoute`, and folding the p75 into the scheduled health scan — is a per-site step (deploy-only verifiable).
+
+- 8509d15: Add a D1 Sessions API seam so draft resume is read-your-writes even behind [D1 read replication](https://developers.cloudflare.com/d1/best-practices/read-replication/) (#69). With replication on, a resume read (loading the latest draft after an auto-save) can land on a replica that hasn't caught up to the write — "my edit vanished." The Sessions API closes that gap, and the toolkit now wires it end to end.
+
+  `louise-toolkit/db` gains the seam: `db()` now accepts a `D1Database` **or** a `D1DatabaseSession` (Drizzle only calls `prepare`/`batch`, both of which a session implements), plus `openD1Session(DB, constraint)`, `d1Bookmark(client)`, and the bookmark-cookie helpers `D1_BOOKMARK_COOKIE` / `readD1Bookmark` / `serializeD1BookmarkCookie`. All of it feature-detects `withSession` and degrades to the raw binding when the runtime predates the Sessions API — so behaviour on an un-replicated D1 is unchanged and the seam is safe to ship before you flip replication on.
+
+  The draft-save path (`applySaveDraft`, shared by the raw `versionsRoute` POST and the `louiseSaveDraft` Action) now runs through a `first-primary` session and persists the session bookmark in an HttpOnly `louise_d1_bookmark` cookie. The resume read anchors a session at that cookie and threads it through the draft query, so the write is always visible. The cookie round-trips automatically across the same-origin auto-save POST and the next top-level edit-mode navigation — no client code. Writes always target the primary, so only the read path changes; public view-mode renders stay session-free and cacheable.
+
+  ```ts
+  // Edit-mode resume, anchored at the last auto-save's bookmark.
+  import { resumeReadSession } from "./lib/louise/drafts.js";
+  const resume = resumeReadSession(env.DB, Astro.cookies);
+  const draft = await latestDraftSections(resume.client, home.id, env.DRAFTS);
+  resume.commit(); // persist the advanced bookmark
+  ```
+
+  See `guide/drafts.md` for the how-to, including the REST call to enable replication (`PUT /accounts/{id}/d1/database/{id}` with `{"read_replication":{"mode":"auto"}}`).
+
+- a6a9a2c: Add a shell-owned **action footer** to the Louise Settings drawer (#109) — a persistent, context-driven bar so save / cancel / publish / delete are always visible instead of scattered inline and scrolled off.
+
+  - New `client/settings/panel-actions.tsx`: `PanelActionsProvider` (a push/pop **stack**, so the deepest active view owns the footer and restores the parent's actions on unmount), `usePanelActions().push(actions, status?)`, `DrawerFooter`, and the `PanelAction` / `SaveStatus` / `ActionKind` types — all exported from `louise-toolkit/client/settings`.
+  - The shell wraps the drawer body + footer in the provider and installs **Cmd/Ctrl+S → the active frame's primary action**. Buttons are dirty-aware (disabled when unchanged), show a `busyLabel` ("Saving…") while an async `onClick` is pending, and auto-saving surfaces can push a **status pill** instead of buttons. The footer collapses when the active view has neither actions nor a status.
+  - The framework panels migrate their inline actions into the footer, removing the duplicated inline buttons:
+    - **Settings** — Save/Revert (Save dirty-gated; Revert restores the last-loaded snapshot; the pill carries the saved/error result). Sign-out stays in the body.
+    - **Pages** — the per-page settings form's Save (dirty-gated) + Delete. The list keeps its inline "+ New page"; the footer collapses on the list.
+    - **Media** — the per-asset alt/caption editor's Save/Cancel. Editing is now single-open (one asset at a time) so the footer stack has one unambiguous top; the card's Copy/Alt/Delete stay inline.
+
+  Framework panels are always mounted inside the shell (via `mountSettings`), which now provides the footer context; a site-registered collection tab can push its own footer actions with `usePanelActions`.
+
+- ab52389: Drop the routine save-status text from the sections edit bar. With auto-save on
+  (the default), drafts stage on a debounce and flush on navigation, so the
+  "Saving… / Draft saved / Unsaved / Draft" line is redundant noise — the bar now
+  shows **History + Publish** only. A _failed_ save still surfaces (red, error-only),
+  since it must never be silent and the Publish button doesn't report it. The
+  manual Save-draft button is unchanged for hosts that opt out with `autoSave: false`.
+- a929ac1: Make the editor operable without a mouse, closing the two blocking accessibility gaps in the on-canvas chrome and the overlays.
+
+  **Structural editing is now keyboard-reachable (WCAG 2.1.1).** The section/block chrome only ever appeared on `mouseover`, so its move / delete / ⚙-inspect actions — and the non-inline fields (image, link URL, layout, `_settings`) that live behind the gear — were unreachable by keyboard. Marked regions are now tab-stops that reveal their toolbar on focus, with `Enter`/`F2` to step into it, `←`/`→` to rove its buttons, `Escape` to step back out, and `Alt+↑`/`Alt+↓` to reorder plus `Delete`/`Backspace` to remove directly. Structural keys only fire when the region itself holds focus, so they never interfere with typing in a field. The affordances are additive — Louise sets `tabindex`/`aria-keyshortcuts` only where the author hasn't, never overwriting a section's own `role`/`aria-label`, and removes exactly what it added on dispose. The toolbars are proper `role="toolbar"`s and their glyph buttons carry real accessible names ("Move up", not "↑").
+
+  **Overlays now manage focus (WCAG 2.4.3 / 2.1.2 / 4.1.2).** The Settings drawer, the version-history drawer, and the inspector popover moved no focus on open, could be tabbed straight out of into the page behind, and had no Escape. A new shared `wireDialogA11y` helper marks each `aria-modal`, moves focus in, wraps Tab at both edges, closes on Escape, and restores focus to whatever opened it — with collapsed `<details>` groups correctly excluded from the tab ring. Their decorative scrims are now `aria-hidden`.
+
+- 9cd8395: Second accessibility pass over the editor — names, semantics, alt text, and contrast.
+
+  **Inline images can carry alt text, and no longer lose it (WCAG 1.1.1).** ProseKit's image node ships only `src`/`width`/`height` and serializes exactly those, so an image placed in rich text reached the published page with no description — and any authored `alt=` was silently dropped the first time the field round-tripped through the editor. The image node now has an `alt` attribute that both serializes to `<img alt>` and parses back, plus an on-image control to write it (the badge reads "Alt?" in amber until a description is set). The sanitizer already allowed `alt` on `img`, so it persists end to end.
+
+  **Inline editables and inputs have accessible names (WCAG 1.3.1 / 3.3.2 / 4.1.2).** Inline `contenteditable` fields announced only as "edit text" — their sole hint was CSS `::before` content, which is not an accessible name. They now carry `role="textbox"`, `aria-multiline` where applicable, and a name taken from the field's own label. Placeholder-only inputs (invite first/last/email, link label + URL, image URL, Pages search) gained real labels, and the media-library thumbnails — buttons with no text and only a `title` — now have proper names.
+
+  **Popup menus tell the truth and dismiss (WCAG 4.1.2 / 2.1.1).** The add-section palette, block-add menu, AI rewrite menu, and colour swatches all declared `role="menu"`/`menuitem`, promising arrow-key roving that was never implemented. They're now labelled button groups — honest semantics for what they are, plain buttons in the tab order — with `aria-haspopup`/`aria-expanded`/`aria-controls` on every trigger, and Escape or an outside press to dismiss (Escape returns focus to the trigger).
+
+  **Contrast now clears AA (WCAG 1.4.3).** Measured and fixed: success green on white 3.30:1 → 5.02:1, slate-400 body text 2.56:1 → 4.76:1, empty-field placeholder 2.22:1 → 4.69:1, and the white glyphs on the on-canvas toolbars 3.02:1 → 5.02:1 (section) and 3.88:1 → 5.08:1 (block). The section/block rings keep their brand colours — they're non-text graphics and already clear the 3:1 bar; only the bars carrying white labels darkened. Primary buttons move one stop down the existing brand ramp (3.88:1 → 4.68:1), to a blue that was already the button's own hover.
+
+- 355915d: The sections editor now wires the **block layer** into the on-canvas chrome (#182 Phase 2 / ADR 0005 §4). `mountSections` passes block actions to `mountSectionChrome`, and two new store ops — reorder and delete a section's blocks — reconcile `state.items[i].blocks` and mirror the change on the already-rendered page (via `moveBlockElement` / `deleteBlockElement`), then stage a draft via autosave. This is the block analogue of the instant section reorder/delete: no server round-trip, and a section's block markers stay aligned. Block **add / swap-type** still need the fragment-render route (Phase 3). Fully additive — a section with no `blocks` renders and edits exactly as before.
+- ce8f8a6: Add `formToAstroSchema` — the forms counterpart to `collectionToAstroSchema` (#92) — so a `defineForm` definition drops straight into an Astro Action's `input`.
+
+  `louise-toolkit/astro` now exports `formToAstroSchema(form)`, which maps a form's fields to a Zod schema: `email`/`url` carry their format check, `number`/`date` coerce, `checkbox` normalizes to a boolean (accepts `true`/`1`/`"true"`/`"on"`), `select` options double as the allowlist, and `required` drives optional-vs-required (required string-likes must be non-empty). Like the collection bridge it lives in the `astro` subpath and pulls Zod from `astro/zod`, so the framework-agnostic core takes no Zod dependency.
+
+  This closes the gap where form Actions took raw `FormData` + a hand-written interface + manual coercion: the form is the single source of truth, and the client infers the input type for free.
+
+  ```ts
+  export const server = {
+    inquiry: defineAction({
+      input: formToAstroSchema(inquiryForm),
+      handler: async (input) => {
+        /* input is typed + validated */
+      },
+    }),
+  };
+  ```
+
+- 037054f: Structural **add** is now instant — no more save-and-reload (#182 Phase 3 / ADR 0005 §4). "+ Add section" optimistically splices the new item into the store, POSTs it to a per-item **fragment-render route**, and inserts the returned server-rendered HTML in place (re-stamped to the target index, inline fields wired), then stages a draft via autosave. New `insertSectionElement(el, index, container)` in `louise-toolkit/client` places a fragment among the marked sections and re-stamps them 0…n (the add analogue of the reorder/delete DOM ops). The editor still authors **zero markup** — the server owns rendering.
+
+  **Consuming sites opt in** by providing the fragment route: an editor-gated Astro **partial** (`export const partial = true`) that reads a POSTed `{ item }`, forces edit mode, and renders `<Sections sections={[item]} />` — the toolkit POSTs to `/louise-fragment`. Sites without it degrade gracefully: the add falls back to the previous save-and-reload, so nothing breaks. (workers/site ships the reference route.)
+
+- baf6b62: Add an opt-in spelling **and grammar** checker to the rich-text editor (#110), powered by [Harper](https://writewithharper.com) — Automattic's Rust→WASM checker — running **entirely on-device in a Web Worker**. Issues are underlined inline; clicking one opens a popover to apply a suggestion.
+
+  Pivoted from the issue's original self-hosted-LanguageTool design: Harper needs no service to deploy or provision, and the text **never leaves the browser** (a stronger privacy story than a self-hosted checker), while adding a second Rust/WASM module after the resvg OG renderer (#85).
+
+  Enable it per surface — off by default:
+
+  ```ts
+  mountLouise({ /* … */, grammar: true });        // inline rich-text fields
+  // or on the component:  <RichText grammar />    //  and mountRichText(el, onChange, doc, { grammar: true })
+  ```
+
+  `harper.js` is an **optional peer dependency**, loaded via dynamic `import()` only when `grammar` is enabled — so its multi-MB WASM never ships to sites that don't use it (the `binaryInlined` build also avoids a separate `.wasm` fetch). Scope: rich-text prose fields, English only for now (Harper's current limit). Multiline plain-text fields and other languages are follow-ups.
+
+- 42bd2b9: Add the one-click AI fix to the site-health co-pilot (#106 Phase 2b) — generate missing image alt text with Workers AI, straight from the Health panel.
+
+  - **`POST /api/louise/media/generate-alt`** — a new action on `mediaRoute` that backfills `alt` for images missing it: it selects the missing-alt rows (optionally a single `{ key }`), fetches each object from R2, runs `generateAltText`, and writes the result. Capped per call at `DEFAULT_ALT_FIX_BATCH` (12, override with `MediaRouteConfig.altFixBatch`) so a large library can't exhaust the Worker's subrequest/AI budget — the client re-runs until the count is zero. Editor-guarded mutation; **503** when no `altText` runner is wired (the client hides the assist). Reuses the same `altText` / `altTextOptions` config the upload path already uses, so a site that enabled AI alt on upload gets the backfill for free.
+  - **`HealthPanel`** — the "Image descriptions" row now offers **"Fix with AI"** (busy → "Fixing…") beside "Review in Media". On success it refreshes the health, overview, and media queries so counts update live; a 503 swaps the button for a "not set up — add them by hand" note.
+
+  Non-image assets, registry rows whose R2 object is gone, and empty model output are skipped (left for a manual fix), never failing the batch. SEO auto-fix (`suggestSeo` in place) and CWV/RUM remain future work.
+
+- b29f520: Add the one-click AI **SEO** fix to the site-health co-pilot (#106 Phase 2c) — generate an SEO title/description for published pages missing them, from the Health panel. Completes the "one-click fix where AI can" pair (alt + SEO).
+
+  - **`seoFixRoute`** (`core/editor/seo-fix.ts`) — `POST /api/louise/pages/generate-seo` (editor-only). Selects published pages with an SEO gap (or a single `{ id }`), feeds each page's HTML-stripped content to `suggestSeo`, and writes back — **only the missing field(s)**, never overwriting an existing title or description. Capped per call at `DEFAULT_SEO_FIX_BATCH` (8; `batch` overrides); **503** when no AI runner is wired; a page with empty content or no model output is skipped, not failed. Mount before `pagesRoute` (like `searchRoute`) so its `/:id` matcher doesn't claim `/generate-seo`.
+  - **`HealthPanel`** — the alt and SEO rows now share one `AiFixSection` + `createFixer`: each shows **"Fix with AI"** (busy → "Fixing…") beside a manual "Review in …" link, refreshes the affected counts on success, and hides the assist on a 503.
+  - Wired on louisetoolkit.com: `worker.ts` mounts `seoFixRoute({ table: pages, resolveEditor, ai: (env) => env.AI })`.
+
+  SEO generation itself is deploy-verified (Workers AI is server-only). Optional CWV/RUM remains the last, non-blocking thread of #106.
+
+- 1faa88a: Add the site-health co-pilot data layer (#106) — a new `louise-toolkit/health` module that composes Louise's existing primitives into one persisted, owner-facing health snapshot the Home dashboard's Health card (#108) reads.
+
+  - **`HealthSummary`** — `{ brokenLinks, missingAlt, seoGaps, checkedAt, brokenLinkDetails? }`, shape-compatible with `overview.health` so a stored summary can be returned from the overview route directly.
+  - **`summarizeHealth(input)`** — assembles the snapshot from a scan's parts: exact counts, a capped sample of broken-link details (`MAX_BROKEN_LINK_DETAILS`), and the scan timestamp (injectable `now`). Bad counts are guarded to non-negative integers.
+  - **`readHealthSummary` / `writeHealthSummary`** — persist the snapshot in KV via a structural `HealthKV` interface (the real `KVNamespace` fits, no Workers-types dependency). A corrupt blob reads back as `null` rather than throwing. `healthIssueCount` sums the categories.
+
+  Why a persisted snapshot: broken-link checking is a crawl (seconds, network) that belongs on a Cron Trigger, so its result must be stored for the dashboard to read cheaply; the alt/SEO gap counts are cheap COUNTs a site computes at scan time. The Health card stays hidden until the first scan writes a summary.
+
+  Wired end-to-end on louisetoolkit.com: the cron `scheduled()` handler now runs a health scan (broken links + media missing alt + published pages with SEO gaps) and persists it, and the `overview.health` slice reads it back — lighting up the dashboard's Health card. The scan orchestration lives in the site (it owns the exact COUNTs); the toolkit ships the reusable summary + persistence primitive.
+
+- 8497b55: Add the site-health detail panel (#106 Phase 2) — the drill-in behind the Home dashboard's Health card, so the owner can see _what_ is wrong, not just a count.
+
+  - **`HealthPanel`** (`client/settings/dashboard/health-panel.tsx`) — reads the full persisted `HealthSummary` from `/api/louise/health` and lists the broken links (URL · status · the page they're on, capped with an "…and N more"), plus alt/SEO gap counts each with a jump to the surface that fixes them (Media for image descriptions, Pages for SEO). Handles the not-yet-scanned and all-clear states. It's a **hidden framework panel**: reachable from the Health card's "Review" action, not a top-strip button.
+  - **`healthRoute`** (`core/editor/health.ts`) — `GET /api/louise/health` (editor-only), config-driven `read(env)`; returns `{ summary }` with `summary: null` (a 200, not a 404) until the first scan runs, so the panel shows a "not checked yet" state.
+  - The dashboard **Health card's "Review"** now opens the health drill-in (`open({ panel: "health" })`); new `dashboard.healthEndpoint` config overrides the endpoint.
+
+  Wired on louisetoolkit.com: `worker.ts` mounts `healthRoute` reading the persisted summary (`readHealthSummary(env.RL)`). Exported `HealthPanel` from `louise-toolkit/client/settings`.
+
+  Still to come (Phase 2b): one-click AI fixes — generating alt text (`generateAltText`) and SEO meta (`suggestSeo`) in place — which need per-item detail in the summary + fix endpoints, and optional CWV/RUM.
+
+- 60e690f: Adopt the Cloudflare **Images binding** in `louise-toolkit/media` for server-side transforms and `.info()`-based dimensions, and retire the `sharp` dependency from the sites. (#84)
+
+  - `LouiseMediaEnv` / `MediaRouteEnv` gain an **optional** `IMAGES` binding. When present, uploads read intrinsic dimensions via `IMAGES.info()` — which sizes AVIF and TIFF, the two formats the header parser (`imageDimensions`) can only sniff, not measure. Absent → the header parser is used, so nothing regresses.
+  - `imageInfo(images, bytes)` — read dimensions through the binding (returns `null` for SVG or on any Images error, so callers can fall back).
+  - `transformImage(images, input, opts)` — server-side re-encode/resize/crop that returns a `Response` of the encoded bytes. This cashes the long-standing "future Images-binding backend" seam in `transform.ts`. For public on-the-fly derivatives, prefer the zero-cost URL rewrite (`cfImage`) — reach for this when you need the transformed _bytes_.
+  - `putMedia` accepts an optional `images` binding and the editor `mediaRoute` passes `env.IMAGES` through automatically.
+
+  Site/docs: declare `"images": { "binding": "IMAGES" }`, drop the direct `sharp` dependency (the Cloudflare adapter externalizes sharp and uses its workerd image service; docs use `passthroughImageService`), and disallow sharp's native postinstall in the pnpm workspace (`sharp: false`) since it now only arrives as an inert optional dep of `astro`.
+
+- 60e033f: Rich-text format bubble + brand colours (#182 Phase 5). The inline editor's
+  formatting toolbar is now a floating **selection bubble** (ProseKit
+  `InlinePopover`) that appears over highlighted text, instead of a caret-following
+  focus dock. It gains an inline **link** control, and the text-colour swatches are
+  now **brand tokens** rather than fixed hex: applying one stores
+  `color: var(--color-<token>)`, so the colour resolves to the _site's own_ daisyUI
+  theme (primary / secondary / accent / neutral / info / success / warning / error)
+  and a re-theme flows through with no content rewrite. The sanitizer accepts
+  `color: var(--color-*)` on the mark's `<span>`.
+- b950812: The **inspector popover** — the contextual editor for a section's layout + settings (#182 Phase 4 / ADR 0005 §5). The on-canvas chrome toolbar gains a ⚙ (wired via a new optional `onInspect` on the section/block chrome actions) that opens a small popover anchored to the selected element: a **layout picker** (sections with declared `layouts`) and a **settings form** (each `settings` field, reusing the dock's inputs). Picking a layout / committing a setting updates the store (`_layout` / `_settings`) and re-renders the section through the fragment route (the same seam as block add / swap-type), then autosaves — so the change shows on the real design with no reload. Blocks get the settings half (no layouts). Opt-in and additive: no `onInspect`/`layouts`/`settings` → no ⚙, unchanged behaviour. Outline-tree navigation and migrating the dock's per-item forms onto the rail are later refinements.
+- 1c4a8f9: Section **reorder and delete are now instant** (#182 Phase 1 / ADR 0005 §4). Moving a section up/down or deleting it (from the on-canvas toolbar or the dock) reconciles the store and mirrors the change on the already-rendered DOM — relocating/removing the marked section element and re-stamping the `data-louise-section` **and** `data-louise-sfield` markers — then stages a draft via autosave. No more save-and-reload round-trip for these ops, and inline editing stays aligned across a reorder (`wireInline` now re-reads the marker rather than closing over it). New `chrome.ts` helpers: `restampSection`, `moveSectionElement`, `deleteSectionElement`. Add / array-item structural ops still reload for now — they need markup that doesn't exist yet (the Phase 3 fragment-render route).
+- dd2187a: Add a Workers KV write-buffer for auto-save to coalesce high-frequency draft writes (#70) — a burst of edits no longer hits D1 with a version row per debounce tick.
+
+  - New `louise-toolkit/editor` draft-buffer primitives: `draftBufferKey`, `readDraftBuffer` / `writeDraftBuffer` / `clearDraftBuffer` (with a self-expiry TTL), and `shouldFlushBuffer`. The buffer holds the freshest working-draft snapshot per page; the consistency model is deliberately simple — the buffer is only ever ahead of or equal to the D1 draft and is cleared on publish, so "the freshest pending draft" is `buffer ?? D1 draft`.
+  - `versionsRoute` gains an opt-in `bufferKv?: (env) => DraftBufferKV | undefined` (+ `bufferFlushMs`, default 10s). When set: each auto-save `POST …/versions` updates the KV buffer and only flushes to D1 on the first write of a session, every `bufferFlushMs`, and on publish (which flushes the freshest work, publishes it, then clears the buffer). Discarding a draft clears the buffer too. Unset → every draft writes straight to D1, unchanged.
+
+  Resume reads should prefer the buffer (it holds edits not yet flushed) — feed `readDraftBuffer` into your draft-render path. KV is eventually consistent and caps ~1 sustained write/sec per key, so it's a scratch buffer; D1 stays authoritative.
+
+  Site: bind a `DRAFTS` KV namespace, enable `bufferKv` on the pages collection, and make the draft-render helpers (`latestDraftBody` / `latestDraftSections`) consult the buffer first. Provision `wrangler kv namespace create DRAFTS` before deploying.
+
+- 38b8b81: `createLouiseMiddleware`'s `rateLimit.kv` now also accepts a getter (`() => RateLimitBackend | undefined`), resolved per request only for a matched surface. Astro middleware is constructed at module scope, but `cloudflare:workers` `env` bindings are only valid in request scope (the same reason editor Actions take `getEnv: () => env`) — a getter lets a site pass `kv: () => env.RL` without reading the binding at module-eval, which would otherwise crash on load. A getter that yields a falsy backend (e.g. the KV namespace isn't provisioned yet) skips rate-limiting — fail open, consistent with `rateLimit`. Passing a plain `RateLimitBackend` is unchanged.
+- de43f53: Rate limiter: optional Cloudflare native Rate Limiting binding, with the KV counter retained as fallback (#89).
+
+  - `louise-toolkit/security` `rateLimit(backend, key, limit, windowSec)` now accepts either a KV binding (as before) or Cloudflare's native Rate Limiting binding — a new `RateLimitBackend = KVLike | RateLimiterBinding` union, dispatched on the binding shape. The native path is in-colo (no KV round-trip) and cheaper for the hot public abuse-control surfaces (pay/email, form submissions, search). Both paths fail open, so a limiter outage never blocks sign-in or a form.
+  - Callers are unchanged: `KVLike` stays assignable, and the `formRoute({ rateLimitKv })` and Astro-middleware `rateLimit.kv` slots widen to `RateLimitBackend` so a site opts into the native binding just by passing it (typically `env.RATE_LIMIT ?? env.KV`).
+  - Semantics note for the native path: the budget lives in wrangler config (`ratelimits` binding, `period` capped at 10 or 60s), so `limit`/`windowSec` become **advisory**, `remaining` is best-effort, and `retryAfter` is a bounded upper estimate — not the exact reset the KV path reports. Use it for coarse burst control; keep long-window budgets (e.g. per-day) on KV.
+
+  Sandbox: the hand-rolled per-IP limiter on the `/api/checkout` pay+email endpoint now runs through the shared `rateLimit` primitive — an optional native `RATE_LIMIT` burst guard (20/60s, no provisioning needed) in front of the existing per-day KV budget.
+
+- d351abf: Add a live OG / social-card preview to the pages drawer (#76). As an editor types a page's title / SEO title, `PageForm` now shows the share card they'll get — either the custom Social image (when set) or the auto-generated card, drawn with the same `ogCardSvg` template the site rasterizes for real (#85).
+
+  Because #85 made the OG card a pure SVG, the preview is client-side and instant: the browser rasterizes it natively, so there's no Browser Rendering, no server round-trip, and no debounce. The generated card renders as inline SVG (not a `data:` image) so it never trips the site CSP's `img-src`. The new `OgPreview` component / `ogPreviewContent` helper lives in `louise-toolkit/client`, and `PagesPanel` takes an optional `ogCard?: OgCardOptions` prop so a site can match its real card's brand, colours, footer, and font.
+
+  Version-history thumbnails (the Browser-Rendering half of #76) are tracked separately.
+
+- e668e37: Add an owner **Home / Overview dashboard** as the Louise Settings drawer's default landing (#108) — an at-a-glance "what needs my attention?" surface instead of cold-opening into a CRUD panel.
+
+  - **Card registry** (`client/settings/dashboard/*`), mirroring the shell's tab pattern: `DashboardCard` (`id` / `order` / `render(api)`), a shared `<Card>` (title · status dot · plain-language body · one verb), and `HomePanel` — a traffic-light summary ("Your site is healthy" vs "3 things need your attention") over a responsive card grid. Each card is handed a card-scoped `DashboardApi` (`open` for cross-panel deep-links, `report` for reactive status). Exported from `louise-toolkit/client/settings`.
+  - **Built-in Phase-1 cards**, all reading one shared `/api/louise/overview` query (single round-trip): **Content** (drafts + unpublished → Review pages) and **Inbox** (unread → Open inbox) are live; **Health** (broken links / missing alt / SEO) is wired but stays absent until #106 persists the feed. Every card **degrades to hidden** when its slice is missing, so a brochure site's dashboard differs from a shop's with no config.
+  - **Server** `overviewRoute` (`core/editor/overview.ts`) — `GET /api/louise/overview` (editor-only), config-driven: the site supplies a resolver per slice (`content` / `inbox` / `health`) so the toolkit assumes no column names; an absent or throwing resolver is omitted rather than 500-ing the dashboard. Mount before `pagesRoute` like `searchRoute`.
+  - **Shell:** Home is a new fixed framework panel (leads the top strip) and the **default overlay when the drawer opens**. Owner-facing config: `dashboard?: { cards?, hide? }` to append site cards / hide built-ins, and `home?: false` to restore the old Pages-first landing. A `house` icon was added.
+
+  **Behavior change:** the drawer now opens to Home by default. Sites that haven't wired `overviewRoute` see an empty "Your site is healthy" landing (the cards degrade gracefully); pass `home={false}` to keep opening on Pages / the first tab. Wiring `overviewRoute` with content/inbox counts lights up the live cards.
+
+  The `HomePanel` registers no footer actions, so the drawer footer (#109) collapses on it — validating that panel's empty-slot case.
+
+- a9d61c6: Move FTS reindex off the write path onto Cloudflare Queues (#77) — publish returns as soon as the row is written; the search index syncs asynchronously.
+
+  - `createLocalApi` / `createVersionedLocalApi` accept a `LocalApiOptions.deferReindex` callback. When set, create/update/publish/delete hand the changed row's id to it **instead of** syncing the FTS index inline; unset keeps the inline sync, so nothing changes for callers without a queue.
+  - `reindexDoc(db, table, config, id)` — the deferred counterpart: re-reads the row (upsert its index entry, or remove it if the row is gone). Call it from a queue consumer to drain a job. No-op for a collection without `config.search`.
+  - `versionsRoute` gains a `deferReindex?: (env) => DeferReindex | undefined` option (given the runtime env so it can reach a queue binding); returning `undefined` falls back to inline sync.
+  - `louise-toolkit/queues` adds the `SideEffectJob` message type (an extensible `kind: "reindex"` union) to pair with the existing `enqueue` / `processBatch` primitives.
+
+  Site: bind a `QUEUE` producer + a `queue()` consumer (batches of 10 / 5s, 3 retries, then a dead-letter queue) that drains reindex jobs via `reindexDoc`. Provision `wrangler queues create louisetoolkit-side-effects{,-dlq}` before deploying.
+
+- 14a62c4: Real-time multi-editor client wiring (ADR 0002 / #71, task 4) — the browser half of the per-page edit session, completing #71. Opt-in, versioned pages only, degradation-first.
+
+  - **WS client** (`client/realtime.ts`): `connectRealtime()` — handshake, heartbeat, exponential-backoff reconnect, and trailing-throttled outbound `change` publishing, over the authed `/api/louise/realtime/:slug/:id` route. `connected()` gates the surface between publishing here and its debounced-fetch fallback; a `release` flushes any pending change first so the final ≤throttle of typing isn't dropped. Framework-agnostic and fully unit-tested (fake-socket lifecycle).
+  - **Inline surface** (`mountLouise({ realtime })`): presence avatars in the edit bar; publishes field edits over the socket when connected (the DO coalesces + persists — no debounced fetch, no double write); applies a peer's plain-text edits live (skipping a field you're focused in); and soft-locks the rich body — claim on focus, release on blur, with a "locked by X" badge + read-only state when a peer holds it (the server enforces the lock and never broadcasts the body). Publish snapshots the current field values into a fresh draft first, so it promotes the latest even before the DO's alarm fires.
+  - **Sections surface** (`mountSections({ realtime })`): presence in the shared bar. Sections persistence stays on the proven debounced-fetch draft path for now — a live canvas sync is a follow-up.
+  - Exposes `connectRealtime`, `resolveRealtime`, `RealtimeOption`, `RealtimePeer`, `RealtimeSession`, and the `initials`/`otherPeers` presence helpers.
+
+  Degrades silently: with no `EDIT_SESSION` binding the upgrade 503s, `connected()` stays false, and editing keeps using the debounced-fetch auto-save exactly as before. The site's `LouiseEditIsland` / `SectionsMount` stamp the flag from the collection's `realtime` option.
+
+- 7be2413: Add `louise-toolkit/realtime` — the per-page live-editing Durable Object, PR 1 of ADR 0002 (#71): the **hibernatable-WebSocket skeleton** + the authed upgrade route. Presence only for now (no persistence — that's a later slice).
+
+  - **`createEditSession(ctx)`** — the DO session logic a site's `DurableObject` subclass delegates to. On connect it accepts a _hibernatable_ socket (`ctx.acceptWebSocket`), attaches the editor identity, and broadcasts presence; `hello` → `welcome`, `ping` → `pong`; disconnect re-broadcasts presence to the remaining peers. Presence is rebuilt from `ctx.getWebSockets()` + `serializeAttachment`, so it survives hibernation.
+  - **`realtimeRoute({ resolveEditor, namespace })`** — `GET /api/louise/realtime/:slug/:id` (a WebSocket handshake), guarded as a same-origin, session-gated mutation, then forwarded to the per-page DO (`idFromName("<slug>:<id>")`) with the **server-resolved** editor identity (the client never provides its own presence). Returns `503` when the DO binding is absent (realtime cleanly off), `426` for a non-upgrade request.
+
+  Following the `workflows` pattern, the **site owns the `DurableObject` subclass + the wrangler binding** (it imports `cloudflare:workers`); this module ships the logic + route it wires in. Model-runtime WebSocket behavior isn't exercised by the repo's happy-dom harness — the route, session message-handling (fake ctx/sockets), and protocol helpers are unit-tested; the live `acceptWebSocket` hibernation is verified on deploy.
+
+- 8355f96: Real-time multi-editor sessions — change-broadcast protocol + coalesced persistence (ADR 0002 / #71, tasks 2 + 3). The per-page `EditSessionDO` skeleton (#153/#156) grows from a presence handshake into a live editing session: authoritative field state, field-change broadcast, a rich-text soft-lock, and a hibernation-safe alarm that coalesces edits to D1 through the **existing** draft path.
+
+  - **Protocol (`louise-toolkit/realtime`).** Extends the versioned WS envelope with `change {field, value, rev}`, `claim`/`release {field}`, and `bye` (c→s) and `change {field, value, rev, from}`, `ack {rev}`, and `locks` (s→c); `welcome` now carries `{you, peers, snapshot, locks}`. `parseClientMessage` validates the new frames.
+  - **Authoritative state in `ctx.storage`.** Field values, the rev counter, held locks, the page target, and the last writer live in Durable Object storage, so they survive hibernation (an in-memory-only map would be lost when the DO sleeps). Presence is still rebuilt from `getWebSockets()` + each socket's attachment; the attachment now carries the full `EditorSession` (email/role never leave the DO — only `{id, name}` is fanned out).
+  - **Rich-text soft-lock.** `lockFields` (e.g. `["body"]`) are single-editor: only the lock holder may `change` them and their raw values are never broadcast (peers render them read-only and reload on release), so rich-text never crosses sockets un-sanitized. Other fields are last-writer-wins broadcast.
+  - **Coalesced flush = one write path.** `createEditSession(ctx, { fields, lockFields, persist, flushMs })` arms an alarm on the first dirtying edit; the `alarm()` handler hands the coalesced snapshot to a site-injected `persist`. The site wires `persist` to `applySaveDraft` (now re-exported from `louise-toolkit/editor`) with the same `pagesDraftDeps` the fetch auto-save + `saveDraft` Action use — same merge-over-pending-draft, same `${slug}_versions` write, same KV buffer. On failure the snapshot stays dirty and the alarm re-arms.
+  - **`realtime` collection flag.** `CollectionConfig.realtime` (sibling to `versions`); `defineCollection` rejects `realtime` without `versions.drafts` (realtime persists as drafts).
+  - The upgrade route now stamps the full editor identity (id/name/email/role) so the coalesced draft version is faithfully attributed.
+
+  Off by default and degradation-first: with no `EDIT_SESSION` binding the route 503s and nothing changes. Client wiring (presence UI, subscribe/publish with debounced-fetch fallback, soft-lock UI) lands next (task 4).
+
+- d944ca5: Remove the floating "Page sections" dock (#182) — the sections editor is now
+  fully on-canvas. Everything the dock owned relocated:
+
+  - **Per-section editing → the ⚙ inspector.** The inspector popover already held
+    layout + settings; it now also edits the section/block's non-inline **fields**
+    (link URL, image, token) and its **array membership** (per-variant add, per-item
+    variant switcher, remove), so the dock's form is no longer needed.
+  - **Reorder / delete → the on-canvas toolbar.** Section and block move-up /
+    move-down / delete already live on the hover toolbar (`chrome.ts`); the dock's
+    duplicate row controls are gone.
+  - **Save / Publish / status / History → the shared edit bar** via
+    `.louise-bar-actions` (a fixed fallback strip when no `.louise-bar` exists).
+  - **Add section → an on-canvas floating control** (same palette markup).
+  - **Version history → a dedicated right-side drawer** opened from the bar's
+    History button (reuses the Louise drawer visual family). New `history` icon.
+
+  Net effect: no floating panel, no drag-to-move, no collapse toggle — you edit on
+  the real design, with page-level actions on the bar. The store, autosave, inline
+  wiring, and structural fragment routes are unchanged.
+
+- 0d0db1f: Sections gain a first-class **block layer** (#182 Phase 2 / ADR 0005 §1). A `SectionItem` can now carry an ordered `blocks?: BlockItem[]` — the organising layer _within_ a section — described by a `BlockCatalog` of `BlockDef`s that mirror `SectionCatalog`/`SectionDef` (block fields reuse `SectionField` verbatim). A section opts in by declaring a `SectionDef.blocks` policy (`allow` bounds the palette; `min`/`max` bound the count); the block palette is passed to the validator via `validateSections`/`assertValidSections`'s new `options.blockCatalog`. The validator's block branch mirrors the section pass one level down: it checks the array shape and count, rejects a block whose `_type` is disallowed by the section or absent from the catalog (like an unknown section `_type`), and validates each block's fields — so a block field that is itself a discriminated `array` still validates for free. Fully additive: `blocks` is optional, storage is unchanged (still one `sections` JSON column), and a section without a `blocks` policy ignores any stray `blocks` key. Note `blocks` is now a **reserved** structural key on `SectionItem` (alongside `_type`) — name a discriminated array _field_ something else. The on-canvas block chrome and a reference-slice conversion are the next slices.
+- 8474f38: The sections editor now renders **on-canvas section chrome** (#182 Phase 1). In edit mode, hovering a section (over the `data-louise-section` markers the render stamps) rings it and floats a toolbar to **move it up/down or delete it** — wired to the same structural ops the floating dock uses. New `client/chrome.ts` provides the vanilla, framework-free chrome (`mountSectionChrome`) plus the marker readers (`readSectionMarkers`, `sectionIndexOf`) with deepest-boundary hit-testing. Move/delete still save-and-reload for now; instant DOM ops and retiring the dock follow in later slices.
+- 1110318: The sections editor gains a **type-switcher UI** for discriminated array fields (#182 Phase 0, completing the schema/validator from the previous release). When a `SectionField` array declares a `discriminator`, the dock renders one "add" button per variant (labelled/iconed from `variantsAdmin`) and a per-item variant `<select>`. Adding shapes the item as the shared `itemFields` ∪ the chosen variant's fields ∪ the discriminator key; switching preserves the shared field values while swapping in the new variant's blanks — via `reconcile`, so the previous variant's fields are dropped, not left merged on the item. Non-discriminated arrays render exactly as before.
+- 7326bb6: Section `array` fields can now be a **discriminated union** of item shapes (#182 Phase 0). A `SectionField` of `type: "array"` accepts an optional `discriminator` — `key` + `variants` + `variantsAdmin` — mirroring `ArrayFieldConfig.discriminator` one level down, so one array field can hold heterogeneous "block" items (e.g. image vs. quote) instead of a single fixed `itemFields` shape. Each item's `key` value selects its variant, whose fields layer on top of the shared `itemFields`. `validateSections`/`assertValidSections` enforce it: an absent or unknown variant is rejected (like an unknown section `_type`), the selected variant's own field rules run, and other variants' fields stay out of scope. Fully additive — `discriminator` is optional and `array` storage is unchanged (still one JSON column). The editor's type-switcher UI is the next slice.
+- 4c41ec7: Add a `richText` section-field type — inline-editable prose stored as sanitized
+  HTML, edited in place with a **light** ProseKit editor (the format bubble only:
+  bold/italic/link/brand-colour — no block handles, headings, lists, or image
+  inserter). `RichText`/`mountRichText` gain a `minimal` option for this; the
+  section wiring mounts it when a field node carries `data-louise-type="richtext"`
+  and persists the field's HTML. New `sanitizeSectionsRichText(sections, catalog,
+sanitize, blockCatalog?)` export sanitizes those fields on the write path (call it
+  from the collection `beforeChange`, next to the body sanitize) so section HTML is
+  never stored raw.
+- 46e9af5: Sections and blocks gain **layout + settings** schema (#182 Phase 4 / ADR 0005 §5). `SectionItem` can carry a `_layout` token (one of `SectionDef.layouts`) and a `_settings` object; `BlockItem` carries `_settings` (against `BlockDef.settings`). `SectionDef` declares `layouts` (named variants, picker fodder for the inspector rail) and `settings` (non-inline fields — background, spacing, columns … reusing `SectionField`); `BlockDef` declares `settings`. `validateSections` now checks them: an unknown/undeclared `_layout` is rejected like an unknown `_type`, and `_settings` values validate against the declared setting fields with the same `Rule` machinery (undeclared keys ignored, absent `_settings`/`_layout` a no-op). Louise stores only tokens/values — never CSS; the site component reads `_layout`/`_settings` and owns the styling. Fully additive. The inspector-rail UI and a reference-slice render are the next slices.
+- 2824490: Add `louise-toolkit/commerce/square-web` — the browser-side companion to `louise-toolkit/commerce/square`. Previously each site carried its own copy of this loader.
+
+  - `loadSquare(environment)` — inject Square's Web Payments SDK from the squarecdn host (sandbox vs production picked by the same `SQUARE_ENVIRONMENT` the server uses), memoized so concurrent callers share one script load. Allow-list the squarecdn host in the site CSP.
+  - `mountCard(appId, locationId, environment, selector)` — attach a Square card input to `selector` and return a `SquareCardHandle` that tokenizes on demand (surfacing Square's error detail) and tears down. The card is tokenized in the browser, so raw PAN never reaches the Worker; the token is what `commerce/square` charges via `/v2/payments`.
+
+  Framework-agnostic (DOM globals only — no Solid dependency), so any island or vanilla checkout can consume it.
+
+- 98ba35a: Add `louise-toolkit/schema`: Standard Schema (https://standardschema.dev) support with a zero-dependency `s.*` builder, a `standardValidate` runner that folds any Standard Schema's result into Louise's `ValidationViolation` shape, and `parseOrThrow`.
+
+  Form fields (`FormField`) and collection fields (`FieldConfig`) now accept a `schema` — any Standard Schema (Zod/Valibot/ArkType or the built-in `s.*` builder) — run in the shared client+server validation pass alongside the existing zero-dep `Rule` engine, which stays the default. Empty values are skipped so optional fields stay optional. (#98)
+
+- 17231d2: Guard the clipboard against stega leaking out of edit mode. In edit/preview mode
+  rendered text carries an invisible stega source pointer; copying it would paste
+  zero-width characters into other apps. The edit client now installs a `copy`
+  handler that strips the payload (via the dependency-free `stegaClean`) — but only
+  when one is present, so ordinary copies are untouched.
+
+  New from `louise-toolkit/content`: `mountStegaClipboardGuard(target?)` (idempotent,
+  browser-only; auto-mounted by the edit client, call it yourself only if you wire
+  visual editing by hand) and the pure `cleanCopiedStega(text, html)` it uses.
+
+- 21796fb: Every in-section structural edit is now instant — the last save-and-reloads are gone (#182 Phase 3 / ADR 0005 §4). The dock's variant **type-switcher** (swap-type), array **item add/remove**, discriminated **variant add**, and **media set** now route through a single `rerenderSection(i)` seam: mutate the store, re-render just that section through the `/louise-fragment` route, and swap its element in place (re-wired, draft staged) — no page reload. Falls back to save-and-reload when the section isn't on the live rendered page or the fragment can't render, so nothing is lost. Only loading a _different_ draft version still reloads (it swaps the whole document). Purely internal to the sections editor — no API change.
+- 9c4d0a4: Make the inline-edit client **view-transition-aware** (#74), so a host can enable Astro's `<ClientRouter />` and navigate between pages in edit mode without a full reload — the edit bar, drawer, and sections dock re-init on the new page and no pending edits are lost.
+
+  - **Flush on `astro:before-swap`** — a soft navigation fires none of `pagehide` / `visibilitychange`, so `mountLouise` and `mountSections` now also flush pending auto-saved edits (via the raw keepalive fetch) before the DOM is swapped away. Without this, an in-flight edit would be dropped on navigation.
+  - **Re-mount cleanly across swaps** — the `mountLouise` idempotency guard (a runtime `<html>` attribute that survives the swap) is cleared on `astro:after-swap`, and the shared leave/unsaved-guard handlers are wired **once** for the page lifetime rather than per mount, so a re-mount can't stack duplicate `window` listeners.
+  - **Settings drawer** — `mountSettings` disposes its Solid root on `astro:before-swap`, so its `window` listeners don't leak (and a stale drawer can't be opened) after a navigation.
+
+  `astro:*` are plain DOM events; in a non-Astro host they never fire, so the client stays framework-agnostic. Enabling the transitions themselves (adding `<ClientRouter />` + prefetch) remains the host's choice.
+
+- 7019d09: Add a resvg/WASM OG-card renderer to `louise-toolkit/browser` — rasterize the share image with a Rust/WASM SVG rasterizer instead of screenshotting HTML in a headless browser, retiring Browser Rendering from the OG hot path (~100x cheaper, no cold start). (#85)
+
+  - `ogCardSvg(title, options?)` — the OG card as an SVG document (brand label, greedily wrapped title, footer on a dark field). Content-equivalent to the old HTML card, so the content-hashed cache key stays stable across the swap. Every colour, the font family, and the dimensions are options; `wrapTitle` is exported for reuse.
+  - `createResvgRenderer({ wasm, fonts, defaultFontFamily, width })` — an `OgRenderer` backed by `@resvg/resvg-wasm` (a new **optional** peer, dynamically imported like `@cloudflare/puppeteer`). WASM init is guarded per isolate so a renderer built per request initializes exactly once. The caller supplies the compiled WASM module and font buffers (Workers has no system fonts), so the toolkit stays font-agnostic and ships no binary of its own. Note: resvg's font DB selects a static face by weight — it does not interpolate a variable `wght` axis — so supply distinct 400/600/800 faces under one family name for a bold title.
+  - `ogImage`'s option `html` is renamed to `markup` (it now carries SVG as well as HTML). A one-line rename at call sites.
+
+  `createPuppeteerRenderer` stays for genuine full-page work (link-check, live previews). Both renderers satisfy the same `OgRenderer` contract, so `ogImage`'s cache discipline is unchanged.
+
+- 6c72267: Add `withEdgeCache` + `isCacheableDirective` to `louise-toolkit/worker` — a **cookie-aware Worker Cache API layer** for the SSR fallback (#95/#163), so published pages can edge-cache while editor requests always render fresh.
+
+  Because `Cloudflare-CDN-Cache-Control` drives Cloudflare's _automatic_ edge cache — which is keyed by URL and runs before the Worker, so it's cookie-blind — a page cached for an anonymous visitor was served to a logged-in editor (the #163/#165 reverts). `withEdgeCache` caches in `caches.default` instead: the Worker runs on every request, reads/writes the cache only for non-bypassed public GETs, and keeps two invariants so `caches.default` is the _only_ cache that ever holds a page:
+
+  - strips `Cloudflare-CDN-Cache-Control` from every response (CF's cookie-blind auto edge cache never engages);
+  - sends the client `Cache-Control: no-store` for any page it caches (the stored copy keeps the directive for its TTL), so no browser, CF edge, proxy, or leftover "Cache Everything" Cache Rule can shared-cache the HTML cookie-blind — and a browser can't serve a cached public copy after the visitor enters edit mode.
+
+  Editor requests are excluded by construction via a `bypass` predicate. A host wires it as `composeWorker`'s `fetch` (`withEdgeCache(handle, { bypass: isEditRequest })`) and opts renders in per-route with `Astro.cache.set(...)`. See ADR 0004 for the activation runbook — the mechanism ships gated off until verified on a preview deploy.
+
+- 252d119: Add `withHealing` to `louise-toolkit/worker`: a self-healing wrapper for `WorkerRoute`s that maps typed `LouiseError`s to per-code recovery policy instead of surfacing a 500. Each rule composes three deterministic strategies — `retries` (re-run the route with optional exponential backoff, for transient D1/R2/KV blips), `fallback` (serve a degraded/stale `Response`), and `escalate` (hand the failure off out-of-band via `ctx.waitUntil`, never blocking or breaking the response). Codes with no matching rule (and non-`LouiseError` throws) propagate untouched, so healing is always opt-in.
+
+  Also exports `describeFailure`, which turns a healing context into a flat, JSON-serializable `FailureReport` — the payload an `escalate` hook enqueues for out-of-band recovery — and `TRANSIENT_CODES`, the retry-eligible infrastructure error codes. Pure library code with no AI or network coupling: `escalate` is the seam a self-updating pipeline plugs into.
+
+- ae8e661: Add `louise-toolkit/workflows` (#88) — a thin wrapper over Cloudflare Workflows for durable, multi-step pipelines, the sibling of `louise-toolkit/queues`. Where Queues is fire-and-forget, Workflows persists each step's result and owns per-step retries/backoff, so a flow (publish: OG → warm cache → reindex → notify webhook; commerce fulfillment) resumes mid-way after a failure instead of replaying from the top.
+
+  - `startWorkflow(workflow, params, options?)` — the producer (mirrors `enqueue`); wraps a `create` failure in `LouiseWorkflowError`, and takes an optional idempotency `id`.
+  - `defineWorkflow(steps, initialState?)` — turns an ordered list of named steps into a `WorkflowEntrypoint.run` body (mirrors `processBatch`): each step runs inside `step.do` (durable, retried per its `config`) and returns a patch merged into a shared, typed `State` that later steps read.
+
+  The site owns the `WorkflowEntrypoint` subclass + the wrangler `[[workflows]]` binding (it imports `cloudflare:workers`), exactly as it owns the Queues `queue()` export. Queues-vs-Workflows guidance is in the docs, and louisetoolkit.com wires the real publish path onto a `PublishWorkflow` (reindex → warm the OG card → notify webhook), with graceful fallback to the reindex Queue when no Workflow is bound.
+
+### Patch Changes
+
+- 78dd012: Fix the AI editorial assists (SEO suggest + toolbar rewrite), which had gone dead: the default Workers AI text model `@cf/meta/llama-3.1-8b-instruct` was retired by Cloudflare (EOL 2026-05-30), so every `runAi` call threw and — because the helpers degrade to `null` — surfaced as a 502 "unavailable" with no other signal. `DEFAULT_TEXT_MODEL` is bumped to the current `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. (`suggestSeo`/`rewriteText` still take a per-call `model` override, so a site can pin its own.) The alt-text vision model (`@cf/llava-hf/llava-1.5-7b-hf`) and embedding model (`@cf/baai/bge-base-en-v1.5`) were audited and remain current — unchanged.
+- 7224956: Publish is now atomic on D1. `createVersionedLocalApi`'s publish path promotes the version snapshot onto the live row (setting `publishedVersionId`) and marks the version row `published` in a single D1 `batch()` — an implicit transaction — so a mid-write failure can no longer leave the row published while its version still reads `draft` (or the reverse). Parent-row existence is guarded before the batch, and any driver without `batch()` keeps the prior sequential behavior, so the generic `BaseSQLiteDatabase` contract is unchanged.
+- e7e81ec: `imageDimensions` (`louise-toolkit/media`) now reads intrinsic size from **AVIF/HEIF** (the `ispe` box, walking meta → iprp → ipco and picking the largest when a thumbnail sits alongside the primary image) and **TIFF** (the first IFD's `ImageWidth`/`ImageLength`, both byte orders, SHORT or LONG) — the two formats the header parser previously returned `null` for. Pure-TS, **no new dependency**, so the binding-free upload path records dimensions for these formats too; the `.info()` Images-binding path stays the authoritative decoder. Closes the AVIF/TIFF gap noted in #84 and supersedes the Rust/WASM sniff idea in #101.
+- f4e6b73: Editor route handlers now parse request bodies with `louise-toolkit/schema`'s `s.*` builder + `standardValidate` instead of casting untrusted JSON to a type and hand-checking it. `save`, `media`, `settings`, `settings-blob`, `pages`, `versions`, `editors`, and `form` each declare their body shape once; the parse drops unknown keys and rejects malformed bodies consistently (e.g. an array is no longer accepted where an object is expected). Error messages and status codes are unchanged. (#96)
+- 8f0e4ba: The edit bar's **Publish** button is now green (`--louise-green`) instead of yellow, matching its role as the primary commit action. Cosmetic only.
+- 530aacc: Make `suggestSeo` robust to the model — the SEO assist was still 502ing after the model bump because it parsed the model's freeform text as JSON, and the new model returns structured output differently. It now requests Workers AI **JSON mode** (`response_format` json_schema) so `{title, description}` comes back as guaranteed-valid JSON, and reads it via a new `extractJsonObject` that tolerates a parsed object under `response` (JSON mode), a JSON string, or salvaged freeform text. Also: `runAi` now `console.error`s a swallowed model failure instead of dropping it silently — the bare catch hid two real prod failures (a retired model, an unmet schema), so a dead/misbehaving model is now visible in `wrangler tail` without changing the best-effort null-on-failure contract.
+- 050440f: Turn on native browser spellcheck for multiline plain-text section fields (#142). Textarea-backed section fields (`data-louise-multiline` — taglines, card bodies, longer prose) now render with `spellcheck="true"` when edited in place, so misspellings get the browser's underline for free. Single-line headline/label fields stay `spellcheck="false"` (squiggles there are noise), and rich-text prose keeps using the Harper checker (#110). Spelling-only, zero-dependency — the lightweight first step from #142 ahead of any full Harper overlay for plain-text `contenteditable`.
+
 ## 0.13.0
 
 ### Minor Changes
