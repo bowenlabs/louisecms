@@ -18,3 +18,5 @@ coverage/
 # Static docs bundle folded into the marketing Worker's assets at build time
 # (scripts/ci-build.sh copies workers/docs/dist here).
 workers/site/public/_docs/
+# Throwaway project the CI scaffold smoke test writes (create-astroid + doctor).
+packages/create-astroid/_smoke/
