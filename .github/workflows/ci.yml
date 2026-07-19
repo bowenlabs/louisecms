@@ -69,5 +69,24 @@ jobs:
         run: NODE_PATH=node_modules vp pack
         working-directory: packages/louise
 
+      # Build the Astroid CLI (tsgo → dist/) so its generators + bin are runnable.
+      # Not a `vp run` task (this must actually produce dist/, like the louise pack
+      # above) — the package's own build script emits it.
+      - name: Build the Astroid CLI (dist/)
+        run: corepack pnpm --filter astroidjs run build
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+      # Exercise create-astroid's template/ payload end-to-end: scaffold a throwaway
+      # project with the same generators the CLI ships, then validate it with
+      # `astroid doctor`. Catches a broken scaffold engine, a generator whose output
+      # drifts from doctor's expectations, or a missing binding — none of which the
+      # dead-code / lint / typecheck steps see (the template is copied, not imported).
+      - name: Scaffold smoke test (create-astroid + astroid doctor)
+        run: |
+          node packages/create-astroid/index.mjs packages/create-astroid/_smoke \
+            --key smoke --name "Smoke Test" --archetype marketing --color "#5b4bff" --host smoke.example
+          node packages/astroid/bin/astroid.mjs doctor --cwd packages/create-astroid/_smoke
+
       - name: Build the site
         run: vp run "site#build"
