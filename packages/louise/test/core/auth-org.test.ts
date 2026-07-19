@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   activeOrganizationId,
   DEFAULT_ORG_EDITOR_ROLES,
+  invitationAcceptUrl,
   type LouiseAuth,
   resolveOrgEditor,
 } from "../../src/core/auth/index.js";
@@ -102,6 +103,32 @@ describe("resolveOrgEditor", () => {
         tablePrefix: "auth_; DROP TABLE member; --",
       }),
     ).rejects.toThrow(/Invalid tablePrefix/);
+  });
+});
+
+describe("invitationAcceptUrl", () => {
+  it("builds an accept URL from the origin, default path, and invitation id", () => {
+    expect(invitationAcceptUrl("https://x.com", "inv1")).toBe(
+      "https://x.com/organization/accept-invitation?id=inv1",
+    );
+  });
+
+  it("uses a custom accept path and ignores any path already on baseURL", () => {
+    expect(invitationAcceptUrl("https://x.com/some/page", "inv2", "/join")).toBe(
+      "https://x.com/join?id=inv2",
+    );
+  });
+
+  it("falls back to the default path when given an empty string", () => {
+    expect(invitationAcceptUrl("https://x.com", "inv3", "")).toBe(
+      "https://x.com/organization/accept-invitation?id=inv3",
+    );
+  });
+
+  it("encodes an invitation id that contains URL-special characters", () => {
+    expect(invitationAcceptUrl("https://x.com", "a b&c")).toBe(
+      "https://x.com/organization/accept-invitation?id=a+b%26c",
+    );
   });
 });
 

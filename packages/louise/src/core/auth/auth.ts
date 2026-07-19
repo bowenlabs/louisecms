@@ -19,6 +19,7 @@ import { sendEmail } from "../email/index.js";
 import { getSessionSecret, type KVLike } from "../security/index.js";
 import { defaultResolveAdmins } from "./admins.js";
 import { LOUISE_USER_FIELDS } from "./fields.js";
+import { invitationAcceptUrl } from "./org.js";
 import { activeCaptchaSecret, turnstileSecret } from "./turnstile.js";
 import type { LouiseAuthEnv } from "./types.js";
 
@@ -56,6 +57,27 @@ export interface LouiseOrganizationsConfig {
    *  Set false to restrict creation to your own server-side/provisioning flow.
    *  Runtime-only — does not affect the generated schema. */
   allowUserToCreateOrganization?: boolean;
+  /** Render the member-invitation email body (site branding), mirroring
+   *  `renderMagicLinkEmail`. Wiring it turns on invite emails: the factory
+   *  builds the accept `url` from the invitation id + `acceptInvitationPath`,
+   *  renders via this, and sends over the `EMAIL` binding (dev logs the link).
+   *  Omit to skip invite emails — invitations are still created and acceptable
+   *  through the API/client. Reuses the {@link MagicLinkEmail} rendered shape. */
+  renderInvitationEmail?: (args: {
+    /** The accept-invitation link to embed (see `invitationAcceptUrl`). */
+    url: string;
+    /** The invitee's email (the `to` address). */
+    toEmail: string;
+    /** The organization the invitee is being asked to join. */
+    organizationName: string;
+    /** The email of the member who sent the invite. */
+    inviterEmail: string;
+    /** The org role the invitee is being granted (e.g. "member", "admin"). */
+    role: string;
+  }) => MagicLinkEmail;
+  /** Path the invitation accept `url` points at, joined to the site origin with
+   *  `?id=<invitationId>`. Default `/organization/accept-invitation`. */
+  acceptInvitationPath?: string;
 }
 
 export interface LouiseAuthConfig {
@@ -166,6 +188,12 @@ export async function getLouiseAuth(
     additionalFields: { ...LOUISE_USER_FIELDS, ...config.additionalFields },
   };
 
+  // Member-invitation email (org plugin): only wired when the site provides a
+  // renderer. Captured as a const so its narrowed (non-undefined) type carries
+  // into the `sendInvitationEmail` closure below.
+  const renderInvite = config.organizations?.renderInvitationEmail;
+  const acceptPath = config.organizations?.acceptInvitationPath;
+
   return betterAuth({
     database: env.DB,
     baseURL,
@@ -262,6 +290,34 @@ export async function getLouiseAuth(
                       config.organizations.allowUserToCreateOrganization,
                   }
                 : {}),
+              // Invite email: mirror `sendMagicLink` — dev logs the accept link,
+              // prod renders (site branding) + sends over the EMAIL binding.
+              // Better Auth returns only the invitation id; we build the URL.
+              sendInvitationEmail: renderInvite
+                ? async (data) => {
+                    const link = invitationAcceptUrl(baseURL, data.id, acceptPath);
+                    if (isDev) {
+                      console.log(
+                        `[dev] Invitation for ${data.email} → ${data.organization.name}: ${link}`,
+                      );
+                      return;
+                    }
+                    const mail = renderInvite({
+                      url: link,
+                      toEmail: data.email,
+                      organizationName: data.organization.name,
+                      inviterEmail: data.inviter.user.email,
+                      role: data.role,
+                    });
+                    await sendEmail(env.EMAIL, {
+                      from: config.mailFrom,
+                      to: data.email,
+                      subject: mail.subject,
+                      html: mail.html,
+                      text: mail.text,
+                    });
+                  }
+                : undefined,
               ...(prefix
                 ? {
                     schema: {

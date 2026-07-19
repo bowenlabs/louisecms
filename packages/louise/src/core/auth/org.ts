@@ -26,6 +26,28 @@ import type { EditorSession } from "./types.js";
  *  and `admin`. Plain `member` is non-editing unless a site widens this. */
 export const DEFAULT_ORG_EDITOR_ROLES = ["owner", "admin"] as const;
 
+/** Default path the invitation-accept link points at (joined to the site
+ *  origin). Override via `LouiseOrganizationsConfig.acceptInvitationPath`. */
+export const DEFAULT_ACCEPT_INVITATION_PATH = "/organization/accept-invitation";
+
+/**
+ * Build the URL an invitation email links to: the site origin (`baseURL`) +
+ * `acceptPath`, carrying the invitation id as `?id=`. Better Auth doesn't
+ * generate invite URLs — `sendInvitationEmail` hands back only the invitation
+ * id — so the app constructs the link the accept-invitation endpoint/page reads.
+ * An absolute `acceptPath` resolves against the origin, ignoring any path on
+ * `baseURL`; an empty path falls back to {@link DEFAULT_ACCEPT_INVITATION_PATH}.
+ */
+export function invitationAcceptUrl(
+  baseURL: string,
+  invitationId: string,
+  acceptPath: string = DEFAULT_ACCEPT_INVITATION_PATH,
+): string {
+  const url = new URL(acceptPath || DEFAULT_ACCEPT_INVITATION_PATH, baseURL);
+  url.searchParams.set("id", invitationId);
+  return url.toString();
+}
+
 /** An editor session resolved from organization membership: the base editor
  *  fields plus the organization it's scoped to (`role` is the org role, not the
  *  global admin-plugin role). */
