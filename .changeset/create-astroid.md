@@ -14,6 +14,7 @@ placeholders that `astroid doctor` flags until provisioned.
 
 The floor is **editable in the browser**: a `/login` magic-link page and a
 `LouiseEdit` component that boots the edit bar + the Settings drawer
-(Pages/Media/Settings/Users) in edit mode, so a signed-in editor manages content
-and editors from the live site. Inline page-body editing (`versionedPageId` +
-`data-louise-field`) is a documented next step.
+(Pages/Media/Settings/Users) in edit mode. The home page's **title and body are
+inline-editable in place** via Astroid's `<Editable>` primitive — edits stage a
+draft, Publish promotes it. A seeded `home` page row (`seed/home.seed.sql`) makes
+it work out of the box.
