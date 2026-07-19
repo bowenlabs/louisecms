@@ -5,6 +5,7 @@ import {
   louiseSecurityHeaders,
   matchRateRule,
   rateLimit,
+  readSecret,
   rewriteCspStyleSrc,
   sanitizeRichHtml,
   type KVLike,
@@ -324,6 +325,59 @@ describe("getSessionSecret", () => {
     expect(await getSessionSecret(empty, new URL("http://localhost:4321"))).toBe(
       "louise-dev-secret",
     );
+  });
+
+  it("reads a plain `wrangler secret put` string, not just a Secrets Store binding", async () => {
+    expect(await getSessionSecret("plain-value", new URL("https://x.com"))).toBe("plain-value");
+  });
+
+  it("fails closed on a deployed host when the secret is still the placeholder", async () => {
+    const seeded = { get: async () => "DUMMY_REPLACE_ME" };
+    const opts = { placeholder: "DUMMY_REPLACE_ME" };
+    // The whole point of the seeded-placeholder convention: reaching production
+    // with it unresolved must NOT sign sessions with a publicly-known constant.
+    await expect(
+      getSessionSecret(seeded, new URL("https://prod.com"), undefined, opts),
+    ).rejects.toThrow();
+    expect(await getSessionSecret(seeded, new URL("http://localhost:4321"), undefined, opts)).toBe(
+      "louise-dev-secret",
+    );
+    // Without a declared sentinel it is just an ordinary (bad) secret value.
+    expect(await getSessionSecret(seeded, new URL("https://prod.com"))).toBe("DUMMY_REPLACE_ME");
+  });
+});
+
+describe("readSecret", () => {
+  it("returns the trimmed value from a binding or a plain string", async () => {
+    expect(await readSecret({ get: async () => " sk_live_1 " })).toBe("sk_live_1");
+    expect(await readSecret("sk_live_2")).toBe("sk_live_2");
+  });
+
+  it("reads absent / unreadable / empty as not-configured", async () => {
+    expect(await readSecret(undefined)).toBeNull();
+    expect(await readSecret(null)).toBeNull();
+    expect(await readSecret("")).toBeNull();
+    expect(await readSecret("   ")).toBeNull();
+    expect(await readSecret({ get: async () => "" })).toBeNull();
+    // A declared-but-unprovisioned Secrets Store binding throws on read; that is
+    // "not configured", not an outage, so callers degrade instead of 500-ing.
+    expect(
+      await readSecret({
+        get: async () => {
+          throw new Error("no store");
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("reads a caller-declared placeholder as not-configured", async () => {
+    expect(await readSecret("DUMMY_REPLACE_ME", { placeholder: "DUMMY_REPLACE_ME" })).toBeNull();
+    // Trimmed before comparison, so whitespace can't smuggle a sentinel through.
+    expect(await readSecret(" DUMMY_REPLACE_ME ", { placeholder: "DUMMY_REPLACE_ME" })).toBeNull();
+    expect(await readSecret("real", { placeholder: ["DUMMY_REPLACE_ME", "TODO"] })).toBe("real");
+    expect(await readSecret("TODO", { placeholder: ["DUMMY_REPLACE_ME", "TODO"] })).toBeNull();
+    // No sentinel declared → the package has no opinion about the value.
+    expect(await readSecret("DUMMY_REPLACE_ME")).toBe("DUMMY_REPLACE_ME");
   });
 });
 

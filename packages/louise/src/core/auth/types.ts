@@ -13,9 +13,10 @@ export interface LouiseAuthEnv extends LouiseEnv {
   DB: D1Database;
   /** Cloudflare Email Sending binding, used to deliver magic links. */
   EMAIL: EmailSender;
-  /** Turnstile secret (Secrets Store). Captcha activates only when this AND a
-   *  real (non-test) site key are both configured. */
-  TURNSTILE_SECRET: SecretBinding;
+  /** Turnstile secret (Secrets Store binding or plain value), if the site
+   *  provisioned one. Captcha activates only when this AND a real (non-test)
+   *  site key are both configured, so leaving it off simply means no captcha. */
+  TURNSTILE_SECRET?: SecretBinding | string;
   /** Public Turnstile site key, or the test key / unset to keep captcha off. */
   TURNSTILE_SITE_KEY?: string;
   /** Site owner email — always an admin (used by the default allowlist). */

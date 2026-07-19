@@ -62,6 +62,13 @@ jobs:
         run: vp test
         working-directory: packages/louise
 
+      # Astroid's own suite (config validation, the generators, the secret
+      # convention). It aliases `louise-toolkit/*` to source in its vitest
+      # config, so it needs no build and can run alongside the library's.
+      - name: Test (Astroid)
+        run: vp test
+        working-directory: packages/astroid
+
       # Build directly (not `vp run louise#pack`): the task-runner form can serve
       # a cache hit without restoring dist/, leaving the site build unable to
       # resolve the `louise-toolkit/*` subpaths.

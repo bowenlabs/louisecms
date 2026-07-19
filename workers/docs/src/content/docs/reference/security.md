@@ -11,6 +11,7 @@ import {
   rateLimit,
   matchRateRule,
   getSessionSecret,
+  readSecret,
   louiseSecurityHeaders,
 } from "louise-toolkit/security";
 ```
@@ -77,15 +78,55 @@ if (rule) {
 }
 ```
 
-## `getSessionSecret(secret, url, devSecret?)`
+## `readSecret(source, options?)`
 
 ```ts
-function getSessionSecret(secret: SecretBinding, url: URL, devSecret?: string): Promise<string>;
+type SecretSource = SecretBinding | string | null | undefined;
+
+function readSecret(
+  source: SecretSource,
+  options?: { placeholder?: string | readonly string[] },
+): Promise<string | null>;
 ```
 
-Reads the session-signing secret from a Cloudflare Secrets Store binding. On
-`localhost` it returns `devSecret` (default `"louise-dev-secret"`) so the
-sign-in → session loop works locally; any deployed hostname **fails closed**.
+Reads a secret and returns `null` whenever it isn't really configured: the
+binding is absent, the Secrets Store isn't provisioned (a declared-but-unset
+binding **throws** on `.get()`), the value is empty, or it still holds a
+placeholder sentinel you name. Values are trimmed before the sentinel compare.
+
+The point is that callers can **degrade** — skip the integration, run a
+simulated path, leave a captcha off — instead of throwing or calling an upstream
+API with a dummy credential:
+
+```ts
+const token = await readSecret(env.STRIPE_SECRET_KEY, { placeholder: "DUMMY_REPLACE_ME" });
+if (!token) return simulatedCheckout(); // the feature is dormant, not broken
+```
+
+There is no built-in sentinel: the placeholder is the caller's convention, not
+the package's. (Astroid layers its own `DUMMY_REPLACE_ME` convention on top —
+see `astroidjs`' `resolveModuleSecrets`.)
+
+## `getSessionSecret(secret, url, devSecret?, options?)`
+
+```ts
+function getSessionSecret(
+  secret: SecretSource,
+  url: URL,
+  devSecret?: string,
+  options?: { placeholder?: string | readonly string[] },
+): Promise<string>;
+```
+
+Reads the session-signing secret — from a Cloudflare Secrets Store binding or
+the plain string a `wrangler secret put` produces. On `localhost` it returns
+`devSecret` (default `"louise-dev-secret"`) so the sign-in → session loop works
+locally; any deployed hostname **fails closed**.
+
+Unlike `readSecret`, a missing session secret is an error, not a feature to
+switch off. Pass `placeholder` if your scaffold seeds secrets with a sentinel —
+otherwise a placeholder that reached production would be treated as a valid
+signing key.
 
 :::caution[Deployment assumption]
 The `localhost` dev fallback keys off `url.hostname`. On a routed Cloudflare

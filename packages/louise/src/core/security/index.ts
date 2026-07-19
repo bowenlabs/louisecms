@@ -7,7 +7,7 @@
 
 export { ALLOWED_TAGS, ATTR_ALLOW, sanitizeRichHtml, type SanitizeOptions } from "./sanitize";
 export { matchRateRule, rateLimit, type RateLimitResult, type RateRule } from "./rate-limit";
-export { getSessionSecret } from "./secrets";
+export { getSessionSecret, readSecret, type ReadSecretOptions, type SecretSource } from "./secrets";
 export {
   allowCspDataFonts,
   louiseSecurityHeaders,
