@@ -166,13 +166,20 @@ const CHROME_CSS = `
   display: none;
   gap: 2px;
   padding: 3px;
-  background: var(--louise-orange, #ea7317);
+  /* One stop darker than the ring's brand orange: the bar carries white glyph
+     labels, which need 4.5:1 (WCAG 1.4.3) — the ring itself is a non-text
+     graphic and stays on brand at 3:1. #b45309 = 5.0:1 against white. */
+  background: var(--louise-orange-strong, #b45309);
   border-radius: 8px;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.25);
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
-.louise-chrome-toolbar.louise-block-toolbar { background: var(--louise-blue, #1481ef); }
+/* Likewise the block bar — #0f6ecd = 5.1:1 against its white glyphs. */
+.louise-chrome-toolbar.louise-block-toolbar { background: var(--louise-blue-strong, #0f6ecd); }
 .louise-chrome-toolbar[data-open="1"] { display: inline-flex; }
+/* Keep the bar shown while a keyboard user is roving its buttons (focus is
+ * inside it even though the pointer has left the ringed element). */
+.louise-chrome-toolbar:focus-within { display: inline-flex; }
 .louise-chrome-btn {
   appearance: none;
   border: none;
@@ -190,7 +197,38 @@ const CHROME_CSS = `
 }
 .louise-chrome-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.3); }
 .louise-chrome-btn:disabled { opacity: 0.4; cursor: default; }
+.louise-chrome-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+/* A keyboard-focused editable region (see makeChromeFocusable) gets a visible
+ * ring in its layer colour so the tab stop is obvious. */
+[${SECTION_MARKER_ATTR}][data-louise-kbd]:focus-visible {
+  outline: 2px solid var(--louise-orange, #ea7317);
+  outline-offset: 2px;
+}
+[${BLOCK_MARKER_ATTR}][data-louise-kbd]:focus-visible {
+  outline: 2px solid var(--louise-blue, #1481ef);
+  outline-offset: 2px;
+}
 `;
+
+/** The keyboard actions Louise adds to a marked section/block, advertised to AT
+ *  via `aria-keyshortcuts` (Enter steps into the toolbar; Alt+↑/↓ reorder; Delete
+ *  removes). */
+const CHROME_KEYSHORTCUTS = "Enter Alt+ArrowUp Alt+ArrowDown Delete";
+
+/**
+ * Make a marked section/block a keyboard tab-stop so its toolbar can be reached
+ * without a mouse (the toolbar reveals on focus — see {@link mountSectionChrome}).
+ * Additive and non-destructive: it never overwrites an author's own `tabindex`
+ * (or `role` / `aria-label`) on the element, and flags what it added with
+ * `data-louise-kbd` so the chrome's disposer removes exactly that and nothing the
+ * author owns. Idempotent.
+ */
+function makeChromeFocusable(el: HTMLElement): void {
+  if (el.dataset.louiseKbd === "1" || el.hasAttribute("tabindex")) return;
+  el.tabIndex = 0;
+  el.setAttribute("aria-keyshortcuts", CHROME_KEYSHORTCUTS);
+  el.dataset.louiseKbd = "1";
+}
 
 /** Position a floating toolbar at the top-right of `el`, clamped to the viewport,
  *  and open it. */
@@ -239,6 +277,9 @@ export function mountSectionChrome(opts: SectionChromeActions): () => void {
     b.className = "louise-chrome-btn";
     b.textContent = label;
     b.title = title;
+    // The visible label is a glyph (↑ ✕ ⚙) — give the button a real accessible
+    // name so a screen reader announces "Move up", not "up arrow".
+    b.setAttribute("aria-label", title);
     return b;
   };
   const makeToolbar = (block: boolean, delTitle: string, addTitle?: string, inspect?: boolean) => {
@@ -247,6 +288,9 @@ export function mountSectionChrome(opts: SectionChromeActions): () => void {
       ? "louise-chrome-toolbar louise-block-toolbar"
       : "louise-chrome-toolbar";
     toolbar.dataset.open = "0";
+    toolbar.setAttribute("role", "toolbar");
+    toolbar.setAttribute("aria-orientation", "horizontal");
+    toolbar.setAttribute("aria-label", block ? "Block actions" : "Section actions");
     const up = button("↑", "Move up");
     const down = button("↓", "Move down");
     const del = button("✕", delTitle);
@@ -368,12 +412,160 @@ export function mountSectionChrome(opts: SectionChromeActions): () => void {
       block.cog.addEventListener("click", blockAct(blockActions.onInspect));
     }
   }
+  // ── Keyboard path (a11y) ───────────────────────────────────────────────────
+  // The hover chrome above is mouse-only; mirror it for the keyboard so a section
+  // or block can be reordered, deleted, and inspected without a pointer. Marked
+  // regions are focusable tab-stops (makeChromeFocusable); focusing one reveals
+  // its toolbar (onFocusIn), and Enter/Alt+↑↓/Delete drive it (onKeyDown).
+  const enabledButtons = (tb: HTMLElement): HTMLButtonElement[] => [
+    ...tb.querySelectorAll<HTMLButtonElement>("button:not([disabled])"),
+  ];
+  const stepIntoToolbar = (tb: HTMLElement): void => enabledButtons(tb)[0]?.focus();
+
+  // After a keyboard reorder the region stays the same node but its marker index
+  // shifted (the editor re-stamps synchronously via the instant structural ops);
+  // re-activate from the current marker so the toolbar position + disabled state —
+  // and the tracked active index — follow the new order.
+  const resyncSection = (): void => {
+    const el = activeSection?.el;
+    if (!el) return;
+    if (!el.isConnected) return clearSection();
+    const idx = Number(el.getAttribute(SECTION_MARKER_ATTR));
+    if (Number.isInteger(idx) && idx >= 0) activateSection(idx, el);
+  };
+  const resyncBlock = (): void => {
+    const el = activeBlock?.el;
+    if (!el || !block) return;
+    if (!el.isConnected) return clearBlock();
+    const ref = parseBlockMarker(el.getAttribute(BLOCK_MARKER_ATTR));
+    if (ref) activateBlock(ref, el);
+  };
+  // After a delete the focused region is gone; move focus to whatever now sits at
+  // that index (or the last), so keyboard flow isn't dropped back to <body>.
+  const refocusAfterSectionDelete = (index: number): void => {
+    clearSection();
+    const marks = readSectionMarkers();
+    marks[Math.min(index, marks.length - 1)]?.el.focus();
+  };
+  const refocusAfterBlockDelete = (ref: BlockRef): void => {
+    clearBlock();
+    const marks = readBlockMarkers().filter((b) => b.section === ref.section);
+    marks[Math.min(ref.block, marks.length - 1)]?.el.focus();
+  };
+
+  const onFocusIn = (e: FocusEvent): void => {
+    const t = e.target;
+    if (!(t instanceof HTMLElement)) return;
+    // Focus inside a toolbar keeps its layer active (the keyboard analogue of
+    // hovering the toolbar, which onOver already special-cases).
+    if (section.toolbar.contains(t) || block?.toolbar.contains(t)) return;
+    if (block && t.hasAttribute(BLOCK_MARKER_ATTR)) {
+      const ref = parseBlockMarker(t.getAttribute(BLOCK_MARKER_ATTR));
+      if (ref) return activateBlock(ref, t);
+    }
+    if (t.hasAttribute(SECTION_MARKER_ATTR)) {
+      const index = Number(t.getAttribute(SECTION_MARKER_ATTR));
+      if (Number.isInteger(index) && index >= 0) return activateSection(index, t);
+    }
+    // Focus moved to inner content or off the sections — retract the chrome (the
+    // mouse equivalent is hovering away).
+    clearSection();
+    clearBlock();
+  };
+
+  const onKeyDown = (e: KeyboardEvent): void => {
+    const t = e.target;
+    if (!(t instanceof HTMLElement)) return;
+
+    // (1) Focus is within a toolbar: rove buttons with ←/→, step back to the
+    // region with Escape.
+    const tb = section.toolbar.contains(t)
+      ? section.toolbar
+      : block?.toolbar.contains(t)
+        ? block.toolbar
+        : null;
+    if (tb) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        (tb === section.toolbar ? activeSection?.el : activeBlock?.el)?.focus();
+      } else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        const btns = enabledButtons(tb);
+        const i = btns.indexOf(t as HTMLButtonElement);
+        if (i >= 0) {
+          const n = btns.length;
+          btns[e.key === "ArrowRight" ? (i + 1) % n : (i - 1 + n) % n]?.focus();
+        }
+      }
+      return;
+    }
+
+    // (2) Focus is on a marked region itself (never its inner text — so plain keys
+    // are safe to repurpose). Enter/F2 steps into the toolbar; Alt+↑/↓ reorders;
+    // Delete/Backspace removes.
+    const onSection = !!activeSection && t === activeSection.el;
+    const onBlock = !!activeBlock && t === activeBlock.el;
+    if (!onSection && !onBlock) return;
+
+    if (e.key === "Enter" || e.key === "F2") {
+      e.preventDefault();
+      stepIntoToolbar(onBlock && block ? block.toolbar : section.toolbar);
+      return;
+    }
+    if (onSection && activeSection) {
+      const idx = activeSection.index;
+      if (e.altKey && e.key === "ArrowUp") {
+        e.preventDefault();
+        if (!section.up.disabled) opts.onMoveUp(idx);
+        resyncSection();
+      } else if (e.altKey && e.key === "ArrowDown") {
+        e.preventDefault();
+        if (!section.down.disabled) opts.onMoveDown(idx);
+        resyncSection();
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        opts.onDelete(idx);
+        refocusAfterSectionDelete(idx);
+      }
+    } else if (onBlock && activeBlock && block && blockActions) {
+      const ref = activeBlock.ref;
+      if (e.altKey && e.key === "ArrowUp") {
+        e.preventDefault();
+        if (!block.up.disabled) blockActions.onMoveUp(ref);
+        resyncBlock();
+      } else if (e.altKey && e.key === "ArrowDown") {
+        e.preventDefault();
+        if (!block.down.disabled) blockActions.onMoveDown(ref);
+        resyncBlock();
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        blockActions.onDelete(ref);
+        refocusAfterBlockDelete(ref);
+      }
+    }
+  };
+
+  // Make the currently-rendered regions keyboard tab-stops. Structural ops re-stamp
+  // (and re-focus) new/moved regions, so restampSection/restampBlock keep this fresh.
+  for (const { el } of readSectionMarkers()) makeChromeFocusable(el);
+  if (block) for (const b of readBlockMarkers()) makeChromeFocusable(b.el);
+
   doc.addEventListener("mouseover", onOver, true);
+  doc.addEventListener("focusin", onFocusIn, true);
+  doc.addEventListener("keydown", onKeyDown, true);
 
   return () => {
     doc.removeEventListener("mouseover", onOver, true);
+    doc.removeEventListener("focusin", onFocusIn, true);
+    doc.removeEventListener("keydown", onKeyDown, true);
     clearSection();
     clearBlock();
+    // Remove only the keyboard affordances we added (never an author's own attrs).
+    for (const el of doc.querySelectorAll<HTMLElement>("[data-louise-kbd]")) {
+      el.removeAttribute("tabindex");
+      el.removeAttribute("aria-keyshortcuts");
+      delete el.dataset.louiseKbd;
+    }
     section.toolbar.remove();
     block?.toolbar.remove();
     doc.getElementById(CHROME_STYLE_ID)?.remove();
@@ -396,6 +588,8 @@ export function mountSectionChrome(opts: SectionChromeActions): () => void {
  *  markers' `<i>` aligned with their new owner). */
 export function restampSection(el: HTMLElement, newIndex: number): void {
   el.setAttribute(SECTION_MARKER_ATTR, String(newIndex));
+  // Keep a re-stamped / freshly-inserted section a keyboard tab-stop (idempotent).
+  makeChromeFocusable(el);
   for (const node of el.querySelectorAll<HTMLElement>("[data-louise-sfield]")) {
     const path = node.getAttribute("data-louise-sfield");
     if (!path) continue;
@@ -491,6 +685,8 @@ export function replaceSectionElement(
  *  `data-louise-sfield` descendant. */
 export function restampBlock(el: HTMLElement, section: number, newBlock: number): void {
   el.setAttribute(BLOCK_MARKER_ATTR, `${section}.blocks.${newBlock}`);
+  // Keep a re-stamped / freshly-inserted block a keyboard tab-stop (idempotent).
+  makeChromeFocusable(el);
   for (const node of el.querySelectorAll<HTMLElement>("[data-louise-sfield]")) {
     const path = node.getAttribute("data-louise-sfield");
     if (!path) continue;

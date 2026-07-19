@@ -64,6 +64,7 @@ The core primitives are dependency-injected — you pass in your Cloudflare bind
 | `louise-toolkit/commerce`                             | Shared commerce primitives: money helpers + webhook-signature crypto                                                       |
 | `louise-toolkit/commerce/stripe`                      | Stripe glue: Payment Element / PaymentIntents, invoices, webhooks (raw `fetch`, no SDK)                                    |
 | `louise-toolkit/commerce/square`                      | Square `/v2` catalog, orders, payments, customers, loyalty, subscriptions + webhook verification                           |
+| `louise-toolkit/commerce/square-web`                  | Browser-side Square Web Payments SDK loader + card mount (tokenizes in-page, so the PAN never reaches your Worker)         |
 | `louise-toolkit/commerce/fourthwall`                  | Fourthwall storefront/catalog + webhook verification                                                                       |
 | `louise-toolkit/email`                                | Cloudflare Email Sending (`env.EMAIL.send`)                                                                                |
 | `louise-toolkit/queues`                               | Cloudflare Queues producer + batch consumer                                                                                |

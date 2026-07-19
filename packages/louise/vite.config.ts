@@ -94,6 +94,7 @@ export default {
       "src/core/commerce/index.ts",
       "src/core/commerce/fourthwall.ts",
       "src/core/commerce/square.ts",
+      "src/core/commerce/square-web.ts",
       "src/core/commerce/stripe.ts",
       "src/core/browser/index.ts",
       "src/core/email/index.ts",

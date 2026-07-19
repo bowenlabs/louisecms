@@ -72,6 +72,30 @@ export interface EdgeCacheConfig {
  * short `max-age` is the real freshness floor). Drop-in for `composeWorker`'s
  * `fetch`.
  */
+/** Query params that identify a campaign or ad click rather than the content.
+ *  Deliberately conservative — only params with no content meaning anywhere. */
+const TRACKING_PARAM =
+  /^(?:utm_[a-z_]+|fbclid|gclid|gbraid|wbraid|msclkid|mc_cid|mc_eid|igshid|ttclid|twclid|yclid|_gl)$/i;
+
+/**
+ * The URL a response is stored under: the request URL with tracking params
+ * removed and the survivors sorted. Without this every `?utm_source=…` variant
+ * of a shared link mints its own entry, so campaign traffic — exactly the burst
+ * a cache is meant to absorb — would miss on almost every request. Only the
+ * *key* is normalized; the handler still receives the untouched request, so a
+ * page that reads its own query string is unaffected.
+ */
+export function edgeCacheKeyUrl(url: string): string {
+  const u = new URL(url);
+  if (!u.search) return u.toString();
+  const kept = [...u.searchParams.entries()]
+    .filter(([k]) => !TRACKING_PARAM.test(k))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  u.search = "";
+  for (const [k, v] of kept) u.searchParams.append(k, v);
+  return u.toString();
+}
+
 export function withEdgeCache<Env = unknown>(
   handler: (request: Request, env: Env, ctx: ExecutionContext) => Response | Promise<Response>,
   config: EdgeCacheConfig = {},
@@ -85,8 +109,9 @@ export function withEdgeCache<Env = unknown>(
   return async (request, env, ctx) => {
     const useCache = request.method === "GET" && !(config.bypass?.(request) ?? false);
     // Normalize the key to a bare GET on the URL — independent of the incoming
-    // request's cookies/headers — so every public visitor shares one entry.
-    const key = useCache ? new Request(request.url, { method: "GET" }) : undefined;
+    // request's cookies/headers, and with tracking params stripped — so every
+    // public visitor shares one entry however they arrived at the link.
+    const key = useCache ? new Request(edgeCacheKeyUrl(request.url), { method: "GET" }) : undefined;
     const cache = getCache();
 
     if (key) {

@@ -129,8 +129,14 @@ export function editorsRoute<Env extends EditorRouteEnv = EditorRouteEnv>(
       if ("response" in g) return g.response;
       const id = new URL(request.url).searchParams.get("id");
       if (!id) return json({ error: "Missing editor id." }, 400);
-      // Never orphan the editor — refuse to remove the last editor.
-      const count = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first<{
+      // Never orphan the site — refuse to remove the last *editor*. Counting the
+      // whole table would over-count on a site that also stores customers in it
+      // (email/password auth shares Better Auth's `user` table), letting the final
+      // admin delete themselves and lock everyone out. `role = 'admin'` is the
+      // same test the magic-link allowlist uses.
+      const count = await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM ${table} WHERE role = 'admin'`,
+      ).first<{
         n: number;
       }>();
       if ((count?.n ?? 0) <= 1) {

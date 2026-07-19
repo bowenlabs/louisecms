@@ -1,11 +1,13 @@
 /*
  * Self-hosted brand type for louisetoolkit.com (#194) — the first-party site's
- * replacement for `louise-toolkit/theme/fonts.css`, which loads Roboto Flex from
- * Google Fonts. The package file stays Google-backed (a sensible default for
- * downstream consumers); this site serves its own subset from the Cloudflare
- * edge, so a public page load makes NO request to fonts.googleapis.com /
- * fonts.gstatic.com — a privacy win, on brand for an edge-native toolkit, and no
- * third-party connection on the LCP path.
+ * replacement for `louise-toolkit/theme/fonts.css`.
+ *
+ * (The package file no longer loads from Google Fonts — it base64-inlines Roboto
+ * Flex, so the repo is Google-Fonts-free either way. The reason to keep this file
+ * is WEIGHT, not privacy: the package's inlined face makes that stylesheet ~45KB
+ * of render-blocking CSS, which is fine behind the edit-mode-gated editor bundle
+ * but not on a public LCP path. Here the subset streams as an external woff2
+ * from the Cloudflare edge instead.)
  *
  * Both faces are latin-subset variable woff2 built from the OFL originals (see
  * public/fonts/README.md for the exact regeneration command):

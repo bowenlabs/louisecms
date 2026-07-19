@@ -32,7 +32,9 @@ function SummaryHeader(props: { statuses: CardStatus[] }) {
         data-state={total() === 0 ? "ok" : "attention"}
         aria-hidden="true"
       />
-      <span class="louise-dashboard-summary-text">{text()}</span>
+      {/* A real <h2>: the dashboard cards below are <h3>, so without a level-2
+          above them the panel's heading order skips (WCAG 1.3.1). */}
+      <h2 class="louise-dashboard-summary-text">{text()}</h2>
     </div>
   );
 }

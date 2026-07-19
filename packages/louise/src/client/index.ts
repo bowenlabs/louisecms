@@ -11,6 +11,7 @@
 
 import { stegaClean } from "../core/content/stega-clean.js";
 import { mountStegaClipboardGuard } from "../core/content/visual-editing.js";
+import { humanizeFieldKey, nameEditable, wireToolbarRoving } from "./a11y.js";
 import { type AutoSaveOption, type Autosave, createAutosave, resolveAutoSave } from "./autosave.js";
 import {
   connectRealtime,
@@ -135,6 +136,9 @@ function createChrome(opts: ChromeOptions): Chrome {
   bar.className = "louise-bar";
   bar.setAttribute("role", "toolbar");
   bar.setAttribute("aria-label", "Louise editing toolbar");
+  // role="toolbar" advertises arrow-key roving — implement it rather than just
+  // claim it. Listener is on the bar itself, so it goes when the bar does.
+  wireToolbarRoving(bar);
 
   const btn = (className: string, label: string, onClick: () => void): HTMLButtonElement => {
     const b = document.createElement("button");
@@ -274,7 +278,12 @@ export interface MountLouiseOptions {
   /** Enable the Harper grammar/spelling checker (#110) on rich-text fields. Off by
    *  default; when on, the WASM checker is lazy-loaded (runs on-device — the text
    *  never leaves the browser) and issues are underlined with click-to-apply
-   *  suggestions. English-only for now. */
+   *  suggestions. English-only for now.
+   *
+   *  WEIGHT: Harper ships its dictionary inside the WASM module — ~10MB gzipped,
+   *  fetched once per editor session on first use. It's dynamically imported, so
+   *  leaving this off costs nothing and public pages never see it; just don't
+   *  enable it expecting a small download. */
   grammar?: boolean;
   /** Opt this page into a real-time multi-editor session (ADR 0002 / #71):
    *  connect to the per-page Durable Object for presence, live field echo, and a
@@ -665,6 +674,9 @@ export function mountLouise(opts: MountLouiseOptions): void {
       // Plain-text field: contenteditable, single line.
       el.setAttribute("contenteditable", "plaintext-only");
       el.setAttribute("spellcheck", "false");
+      // Name the region for assistive tech — a bare contenteditable announces
+      // only as "edit text", with no clue which field it is.
+      nameEditable(el, humanizeFieldKey(ref.field));
       el.addEventListener("keydown", (e) => {
         if (e.key === "Enter") e.preventDefault();
       });

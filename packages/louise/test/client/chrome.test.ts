@@ -180,6 +180,164 @@ describe("chrome — on-canvas section toolbar (#182 Phase 1)", () => {
   });
 });
 
+describe("chrome — keyboard path (a11y)", () => {
+  let dispose: (() => void) | undefined;
+  const calls = { up: [] as number[], down: [] as number[], del: [] as number[] };
+
+  afterEach(() => {
+    dispose?.();
+    dispose = undefined;
+    calls.up = [];
+    calls.down = [];
+    calls.del = [];
+    document.body.replaceChildren();
+    document.getElementById("louise-chrome-style")?.remove();
+  });
+
+  const setup = (n: number): HTMLElement => {
+    const el = host(Array.from({ length: n }, (_, i) => i));
+    dispose = mountSectionChrome({
+      onMoveUp: (i) => calls.up.push(i),
+      onMoveDown: (i) => calls.down.push(i),
+      onDelete: (i) => calls.del.push(i),
+    });
+    return el;
+  };
+  const toolbar = () => document.querySelector<HTMLElement>(".louise-chrome-toolbar");
+  const buttons = () => [...(toolbar()?.querySelectorAll("button") ?? [])] as HTMLButtonElement[];
+  const sections = (el: HTMLElement) => [...el.querySelectorAll("section")] as HTMLElement[];
+  /** Focus an element and make sure the delegated `focusin` handler sees it. */
+  const focusEl = (el: HTMLElement) => {
+    el.focus();
+    el.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+  };
+  const key = (el: HTMLElement, k: string, init: KeyboardEventInit = {}) =>
+    el.dispatchEvent(
+      new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...init }),
+    );
+
+  it("makes each marked section a labelled tab-stop", () => {
+    const el = setup(2);
+    for (const s of sections(el)) {
+      expect(s.getAttribute("tabindex")).toBe("0");
+      expect(s.getAttribute("aria-keyshortcuts")).toContain("Alt+ArrowUp");
+      expect(s.dataset.louiseKbd).toBe("1");
+    }
+  });
+
+  it("never overwrites an author's own tabindex", () => {
+    const el = host([0, 1]);
+    const authored = sections(el)[0];
+    authored.setAttribute("tabindex", "-1");
+    dispose = mountSectionChrome({
+      onMoveUp: () => {},
+      onMoveDown: () => {},
+      onDelete: () => {},
+    });
+    expect(authored.getAttribute("tabindex")).toBe("-1");
+    expect(authored.dataset.louiseKbd).toBeUndefined();
+  });
+
+  it("reveals the toolbar when a section takes focus, and retracts on inner content", () => {
+    const el = setup(3);
+    expect(toolbar()?.dataset.open).toBe("0");
+    focusEl(sections(el)[1]);
+    expect(toolbar()?.dataset.open).toBe("1");
+    expect(sections(el)[1].classList.contains("louise-chrome-active")).toBe(true);
+    // Tabbing on into the section's own content leaves the structural chrome.
+    focusEl(el.querySelectorAll("p")[1] as HTMLElement);
+    expect(toolbar()?.dataset.open).toBe("0");
+  });
+
+  it("Enter steps focus into the toolbar", () => {
+    const el = setup(3);
+    const target = sections(el)[1];
+    focusEl(target);
+    key(target, "Enter");
+    expect(document.activeElement).toBe(buttons()[0]);
+  });
+
+  it("Alt+Arrow reorders from the focused section, respecting disabled edges", () => {
+    const el = setup(3);
+    const middle = sections(el)[1];
+    focusEl(middle);
+    key(middle, "ArrowUp", { altKey: true });
+    key(middle, "ArrowDown", { altKey: true });
+    expect(calls.up).toEqual([1]);
+    expect(calls.down).toEqual([1]);
+
+    // First section: move-up is disabled, so the shortcut is inert.
+    const first = sections(el)[0];
+    focusEl(first);
+    key(first, "ArrowUp", { altKey: true });
+    expect(calls.up).toEqual([1]);
+  });
+
+  it("Delete and Backspace remove the focused section", () => {
+    const el = setup(3);
+    focusEl(sections(el)[2]);
+    key(sections(el)[2], "Delete");
+    expect(calls.del).toEqual([2]);
+
+    focusEl(sections(el)[1]);
+    key(sections(el)[1], "Backspace"); // the Mac "delete" key
+    expect(calls.del).toEqual([2, 1]);
+  });
+
+  it("ignores structural keys while focus is inside a section's content", () => {
+    const el = setup(3);
+    const inner = el.querySelectorAll("p")[1] as HTMLElement;
+    // Hovering sets an active section — typing in the content must not act on it.
+    sections(el)[1].dispatchEvent(new Event("mouseover", { bubbles: true }));
+    focusEl(inner);
+    key(inner, "Delete");
+    key(inner, "Backspace");
+    key(inner, "ArrowUp", { altKey: true });
+    expect(calls).toEqual({ up: [], down: [], del: [] });
+  });
+
+  it("roves toolbar buttons with the arrow keys and returns to the section on Escape", () => {
+    const el = setup(3);
+    const target = sections(el)[1];
+    focusEl(target);
+    key(target, "Enter");
+    const [up, down] = buttons();
+    expect(document.activeElement).toBe(up);
+    key(up, "ArrowRight");
+    expect(document.activeElement).toBe(down);
+    key(down, "ArrowLeft");
+    expect(document.activeElement).toBe(up);
+    key(up, "Escape");
+    expect(document.activeElement).toBe(target);
+  });
+
+  it("exposes the toolbar and its glyph buttons to assistive tech", () => {
+    const el = setup(2);
+    focusEl(sections(el)[0]);
+    const tb = toolbar();
+    expect(tb?.getAttribute("role")).toBe("toolbar");
+    expect(tb?.getAttribute("aria-label")).toBe("Section actions");
+    expect(buttons().map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Move up",
+      "Move down",
+      "Delete section",
+    ]);
+  });
+
+  it("dispose removes only the affordances it added", () => {
+    const el = setup(2);
+    dispose?.();
+    dispose = undefined;
+    for (const s of sections(el)) {
+      expect(s.hasAttribute("tabindex")).toBe(false);
+      expect(s.hasAttribute("aria-keyshortcuts")).toBe(false);
+      expect(s.dataset.louiseKbd).toBeUndefined();
+      // The marker contract itself is untouched.
+      expect(s.hasAttribute(SECTION_MARKER_ATTR)).toBe(true);
+    }
+  });
+});
+
 describe("chrome — instant structural ops (#182 Phase 1)", () => {
   const domTitles = () => [...document.querySelectorAll("section h1")].map((h) => h.textContent);
   const domMarkers = () =>
