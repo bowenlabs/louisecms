@@ -76,16 +76,55 @@ jobs:
         run: node_modules/.bin/tsgo -p tsconfig.build.json
         working-directory: packages/astroid
 
-      # Exercise create-astroid's template/ payload end-to-end: scaffold a throwaway
-      # project with the same generators the CLI ships, then validate it with
-      # `astroid doctor`. Catches a broken scaffold engine, a generator whose output
-      # drifts from doctor's expectations, or a missing binding — none of which the
-      # dead-code / lint / typecheck steps see (the template is copied, not imported).
-      - name: Scaffold smoke test (create-astroid + astroid doctor)
+      # Exercise create-astroid end-to-end the way a USER gets it: pack the three
+      # packages, install the tarballs into an empty directory outside the repo,
+      # and scaffold from the installed copy — then validate with `astroid doctor`.
+      #
+      # The clean room is the point. Running the scaffold in-tree (as this step used
+      # to) resolves every import through the workspace's own node_modules, so a
+      # package that forgets to DECLARE a dependency still works — the workspace has
+      # it hoisted anyway. That blind spot shipped a broken `npm create astroid` to
+      # npm once: astroidjs reaches drizzle-orm through `louise-toolkit/content`, but
+      # drizzle-orm is an *optional* peer of louise-toolkit, so npm never installed
+      # it for real users and the CLI died before writing a file. In-tree it passed.
+      #
+      # Three details this depends on, none incidental:
+      #   - `pnpm pack` (not `npm pack`) — only pnpm rewrites `workspace:*` into the
+      #     real version, which is what makes the tarball match a published one.
+      #   - Packing runs each package's `prepublishOnly`, so the artifact is built
+      #     the same way `pnpm publish` would build it.
+      #   - $RUNNER_TEMP is outside the checkout, so there's no workspace root or
+      #     hoisted node_modules above it to resolve stray imports from.
+      - name: Scaffold smoke test (clean-room install from packed tarballs)
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: 0
         run: |
-          node packages/create-astroid/index.mjs packages/create-astroid/_smoke \
-            --key smoke --name "Smoke Test" --archetype marketing --color "#5b4bff" --host smoke.example
-          node packages/astroid/bin/astroid.mjs doctor --cwd packages/create-astroid/_smoke
+          set -euo pipefail
+          PACK="$RUNNER_TEMP/louise-pack"
+          ROOM="$RUNNER_TEMP/louise-clean-room"
+          rm -rf "$PACK" "$ROOM"; mkdir -p "$PACK" "$ROOM"
+
+          for pkg in louise astroid create-astroid; do
+            ( cd "packages/$pkg" && corepack pnpm pack --pack-destination "$PACK" )
+          done
+          ls -1 "$PACK"
+
+          cd "$ROOM"
+          npm init -y > /dev/null
+          # Install all three together so create-astroid's pinned astroidjs /
+          # louise-toolkit resolve to THESE builds rather than whatever the registry
+          # currently holds — otherwise the run silently tests the published copies.
+          npm install "$PACK"/*.tgz
+
+          node node_modules/create-astroid/index.mjs smoke \
+            --key smoke --name "Smoke Test" --archetype marketing \
+            --color "#5b4bff" --host smoke.example
+
+          for f in astroid.config.ts wrangler.jsonc src/schema.ts src/worker.ts src/middleware.ts; do
+            test -f "smoke/$f" || { echo "scaffold did not write $f"; exit 1; }
+          done
+
+          node node_modules/astroidjs/bin/astroid.mjs doctor --cwd smoke
 
       - name: Build the site
         run: vp run "site#build"
