@@ -1173,6 +1173,17 @@ const CSS = `
 .louise-rt-alt-btn:hover { background: rgba(15, 23, 42, 0.9); }
 .louise-rt-alt-btn.is-unset:hover { background: #92400e; }
 .louise-rt-alt-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+/* Icon-only controls rely on the UA's default ring, which is easy to lose against
+   the toolbar/drawer fills. Give them a deliberate, high-contrast one (WCAG 2.4.7
+   / 2.4.11). Inputs and editables already pair outline:none with a box-shadow
+   ring — these are the ones that had nothing explicit. */
+.louise-tb-btn:focus-visible,
+.louise-chip:focus-visible,
+.louise-drawer-close:focus-visible,
+.louise-icon-btn:focus-visible {
+  outline: 2px solid var(--louise-blue);
+  outline-offset: 2px;
+}
 .louise-rt-alt-input {
   width: min(320px, 60vw);
   padding: 3px 8px;
@@ -1333,6 +1344,10 @@ const CSS = `
   font-family: var(--louise-font-head);
   font-weight: 700;
   font-size: 15px;
+  /* It's an <h2> for heading order — neutralize the UA margin so it still reads
+     as the inline summary line it looks like. */
+  margin: 0;
+  line-height: inherit;
 }
 /* A card's at-a-glance status dot (also used inline in the summary). */
 .louise-card-dot {

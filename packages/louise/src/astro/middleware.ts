@@ -147,7 +147,14 @@ export function createLouiseMiddleware<TEditor = unknown>(
         // always re-checked, so a stale cookie without a session renders public.
         const param = context.url.searchParams.get("louise");
         if (context.url.searchParams.has("louise") && param !== "off") {
-          context.cookies.set(editCookie, "1", { path: "/", sameSite: "lax" });
+          // `secure` only over https, so plain-http localhost dev still round-trips
+          // the toggle. The cookie grants nothing on its own — the session above is
+          // re-verified every request — so this is hygiene, not a control.
+          context.cookies.set(editCookie, "1", {
+            path: "/",
+            sameSite: "lax",
+            secure: context.url.protocol === "https:",
+          });
           locals.editMode = true;
         } else if (param === "off") {
           context.cookies.delete(editCookie, { path: "/" });

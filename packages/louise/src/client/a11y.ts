@@ -60,6 +60,36 @@ function tabbables(root: HTMLElement): HTMLElement[] {
   });
 }
 
+/**
+ * Arrow-key roving for a `role="toolbar"`: ←/→ step between its enabled controls,
+ * Home/End jump to the ends. Declaring `role="toolbar"` advertises exactly this
+ * interaction to assistive tech, so a toolbar without it is describing a keyboard
+ * model it doesn't have (WCAG 4.1.2). Tab still enters and leaves the toolbar as
+ * before. Returns a disposer.
+ */
+export function wireToolbarRoving(toolbar: HTMLElement): () => void {
+  const KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
+  const onKeyDown = (e: KeyboardEvent): void => {
+    if (!KEYS.has(e.key)) return;
+    const items = [...toolbar.querySelectorAll<HTMLElement>("button:not([disabled])")];
+    const i = items.indexOf(e.target as HTMLElement);
+    if (i < 0 || items.length === 0) return;
+    e.preventDefault();
+    const n = items.length;
+    const next =
+      e.key === "ArrowRight"
+        ? (i + 1) % n
+        : e.key === "ArrowLeft"
+          ? (i - 1 + n) % n
+          : e.key === "Home"
+            ? 0
+            : n - 1;
+    items[next]?.focus();
+  };
+  toolbar.addEventListener("keydown", onKeyDown);
+  return () => toolbar.removeEventListener("keydown", onKeyDown);
+}
+
 export interface PopoverDismissOptions {
   onClose: () => void;
   /** The control that toggles the popover. Excluded from the outside-press check

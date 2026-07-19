@@ -130,17 +130,26 @@ export async function applySaveDraft<Env extends EditorRouteEnv = EditorRouteEnv
   const kv = deps.bufferKv?.(env);
   const bufferKey = draftBufferKey(deps.config.slug, id);
 
+  // Read the coalescing buffer *first*: when one exists it is already the merge
+  // base (it's always ≥ the D1 draft), which makes the version query below dead
+  // work. The buffer coalesces writes; gating this read on it coalesces the reads
+  // too, so a burst of auto-saves no longer pays for a full version list on every
+  // debounce tick — only the live-row lookup, which the 404 check needs anyway.
+  const buffered = kv ? await readDraftBuffer(kv, bufferKey) : null;
+
   const [current] = await database.select().from(deps.table).where(eq(pkCol, id)).limit(1);
   if (!current) return { ok: false, status: 404, error: "Not found" };
   const cur = current as Record<string, unknown>;
-  const publishedVersionId = (cur.publishedVersionId as number | null) ?? null;
-  const versions = (await api.findVersions(context, id)) as Record<string, unknown>[];
-  const pending = latestPendingDraft(versions, publishedVersionId);
+  const pending = buffered
+    ? undefined
+    : latestPendingDraft(
+        (await api.findVersions(context, id)) as Record<string, unknown>[],
+        (cur.publishedVersionId as number | null) ?? null,
+      );
   // The merge base is the freshest pending work: the KV buffer (if buffering is
   // on and one exists — it's always ≥ the D1 draft), then the D1 draft, then the
   // live row. So a partial save from a second surface still layers onto the
   // in-flight buffer rather than reverting it.
-  const buffered = kv ? await readDraftBuffer(kv, bufferKey) : null;
   const mergeBase =
     (buffered?.data as Record<string, unknown> | undefined) ??
     (pending?.versionData as Record<string, unknown> | undefined) ??

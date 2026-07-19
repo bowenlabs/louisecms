@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { isCacheableDirective, withEdgeCache } from "../../src/core/worker/index.js";
+import {
+  edgeCacheKeyUrl,
+  isCacheableDirective,
+  withEdgeCache,
+} from "../../src/core/worker/index.js";
 
 /** A fake `Cache` recording match/put/delete. `match` returns a stored entry by
  *  URL; `put` stores the response keyed by the request URL. */
@@ -174,5 +178,30 @@ describe("withEdgeCache", () => {
     await (c as unknown as { _drain: () => Promise<unknown> })._drain();
     expect(puts[0]?.hasSetCookie).toBe(false); // stripped before caching
     expect(res.headers.get("set-cookie")).toBe("sess=abc"); // client response keeps it
+  });
+});
+
+describe("edgeCacheKeyUrl", () => {
+  it("strips tracking params so campaign links share one entry", () => {
+    expect(edgeCacheKeyUrl("https://x.test/p?utm_source=news&utm_medium=email")).toBe(
+      "https://x.test/p",
+    );
+    expect(edgeCacheKeyUrl("https://x.test/p?fbclid=abc&gclid=def&msclkid=ghi")).toBe(
+      "https://x.test/p",
+    );
+  });
+
+  it("keeps content-bearing params and sorts them for a stable key", () => {
+    expect(edgeCacheKeyUrl("https://x.test/p?page=2&utm_source=news")).toBe(
+      "https://x.test/p?page=2",
+    );
+    // Same params in either order resolve to the same entry.
+    expect(edgeCacheKeyUrl("https://x.test/p?b=2&a=1")).toBe(
+      edgeCacheKeyUrl("https://x.test/p?a=1&b=2"),
+    );
+  });
+
+  it("leaves a bare URL untouched", () => {
+    expect(edgeCacheKeyUrl("https://x.test/p")).toBe("https://x.test/p");
   });
 });

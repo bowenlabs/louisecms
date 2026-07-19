@@ -2,7 +2,9 @@
 // Mounts the on-page block builder over the sections region in edit mode. The
 // heavy Solid client is dynamically imported (only when editing) and reads the
 // page id + current sections off the [data-louise-sections] wrapper, plus the
-// site's field catalog. Public visitors download nothing.
+// site's field catalog. A public visitor downloads only this ~0.6KB (gzipped)
+// boot module, which gates out at runtime on the edit-only
+// [data-louise-sections] marker — the heavy editor chunk is never fetched.
 ---
 
 <script>

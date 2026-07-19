@@ -34,7 +34,7 @@ import {
 import { ResizableHandle, ResizableRoot } from "prosekit/solid/resizable";
 import { InlinePopoverRoot } from "prosekit/solid/inline-popover";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { wirePopoverDismiss } from "./a11y.js";
+import { wirePopoverDismiss, wireToolbarRoving } from "./a11y.js";
 import { render } from "solid-js/web";
 import { Icon, type IconName } from "./icons.jsx";
 
@@ -354,7 +354,12 @@ function Toolbar(props: { minimal?: boolean }) {
   // highlighted. Buttons use onMouseDown-preventDefault so clicking one doesn't
   // blur the editor (which would hide the dock).
   return (
-    <div class="louise-toolbar" role="toolbar" aria-label="Formatting">
+    <div
+      class="louise-toolbar"
+      role="toolbar"
+      aria-label="Formatting"
+      ref={(el) => onCleanup(wireToolbarRoving(el))}
+    >
       <Btn icon="bold" title="Bold" on={active().bold} run={() => editor().commands.toggleBold()} />
       <Btn
         icon="italic"

@@ -209,6 +209,13 @@ export interface SemanticSearchOptions extends EmbedOptions {
  * query embeds to nothing, or the query errors, so a caller falls back cleanly
  * to keyword results. Matches whose id doesn't parse to a numeric row id (a
  * foreign record) are skipped.
+ *
+ * PRIVACY — this is the one Louise path that sends *visitor*-supplied text off
+ * the origin: the search query is embedded by Workers AI (a Cloudflare
+ * first-party binding, not a third party) before the vector lookup. Editor
+ * content going to the AI helpers is expected; a visitor's query may not be, so
+ * disclose it if your privacy policy enumerates processors. Omit the `index`/
+ * runner and search stays entirely local (keyword FTS).
  */
 export async function semanticSearch(
   index: VectorIndex | undefined,
