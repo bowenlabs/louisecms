@@ -22,6 +22,7 @@ import { QueryClientProvider } from "@tanstack/solid-query";
 import { createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { render } from "solid-js/web";
 import type { OgCardOptions } from "../../core/browser/og-card.js";
+import { wireDialogA11y } from "../a11y.js";
 import { Icon } from "../icons.jsx";
 import { injectStyles } from "../styles.js";
 import { BUILTIN_CARDS } from "./dashboard/cards.jsx";
@@ -147,7 +148,13 @@ export function Settings(props: SettingsConfig) {
     <div data-theme="louise">
       <Show when={open()}>
         <div class="louise-drawer-scrim" onClick={() => setOpen(false)} aria-hidden="true" />
-        <aside class="louise-drawer" role="dialog" aria-label="Louise explorer">
+        <aside
+          class="louise-drawer"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Louise explorer"
+          ref={(el) => onCleanup(wireDialogA11y(el, { onClose: () => setOpen(false) }))}
+        >
           <header class="louise-drawer-head">
             <span class="louise-who louise-drawer-brand">
               <span class="louise-who-dot" aria-hidden="true" />

@@ -39,6 +39,7 @@ import {
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { Portal, render } from "solid-js/web";
 import { stegaClean } from "../core/content/stega-clean.js";
+import { wireDialogA11y } from "./a11y.js";
 import { type AutoSaveOption, type Autosave, createAutosave, resolveAutoSave } from "./autosave.js";
 import {
   connectRealtime,
@@ -1019,8 +1020,19 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
           shell, so this is a dedicated history drawer rather than a tab within it. */}
       <Show when={showHistory()}>
         <Portal>
-          <div class="louise-drawer-scrim" onClick={() => setShowHistory(false)} />
-          <aside class="louise-drawer louise-history-drawer" data-theme="louise">
+          <div
+            class="louise-drawer-scrim"
+            onClick={() => setShowHistory(false)}
+            aria-hidden="true"
+          />
+          <aside
+            class="louise-drawer louise-history-drawer"
+            data-theme="louise"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Version history"
+            ref={(el) => onCleanup(wireDialogA11y(el, { onClose: () => setShowHistory(false) }))}
+          >
             <div class="louise-drawer-head">
               <span class="louise-drawer-brand">Version history</span>
               <button
@@ -1116,13 +1128,17 @@ function SectionsRoot(props: SectionsEditorProps & { host: HTMLElement }) {
           const si = () => inspectSection(target);
           return (
             <Portal>
-              <div class="louise-inspector-scrim" onClick={closeInspector} />
+              <div class="louise-inspector-scrim" onClick={closeInspector} aria-hidden="true" />
               <div
                 class="louise-inspector"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="louise-inspector-title"
                 style={{ top: `${insp().top}px`, left: `${insp().left}px` }}
+                ref={(el) => onCleanup(wireDialogA11y(el, { onClose: closeInspector }))}
               >
                 <div class="louise-inspector-head">
-                  <span class="louise-inspector-title">
+                  <span class="louise-inspector-title" id="louise-inspector-title">
                     {inspectDef(target)?.label ?? inspectItem(target)?._type}
                   </span>
                   <button
