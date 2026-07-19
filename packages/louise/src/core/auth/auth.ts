@@ -14,7 +14,7 @@
 
 import { passkey } from "@better-auth/passkey";
 import { betterAuth } from "better-auth";
-import { admin, captcha, magicLink } from "better-auth/plugins";
+import { admin, captcha, magicLink, organization } from "better-auth/plugins";
 import { sendEmail } from "../email/index.js";
 import { getSessionSecret, type KVLike } from "../security/index.js";
 import { defaultResolveAdmins } from "./admins.js";
@@ -35,6 +35,27 @@ export interface MagicLinkEmail {
   subject: string;
   html: string;
   text: string;
+}
+
+/**
+ * Multi-editor tenancy via the Better Auth organization plugin (issue #100):
+ * multiple editors/roles per organization, org-scoped membership + invitations,
+ * and optional teams. Enabling it adds the `organization`/`member`/`invitation`
+ * tables (plus `team`/`teamMember` when `teams` is on) and an
+ * `activeOrganizationId` column on `session`, so the SAME shape MUST be set on
+ * `AuthSchemaConfig.organizations` when regenerating the migration — otherwise
+ * the committed schema drifts from what the runtime queries ("always generate,
+ * never hand-roll"). Editor access for members is gated by `resolveOrgEditor`
+ * (org role), a second axis beside the global admin allowlist.
+ */
+export interface LouiseOrganizationsConfig {
+  /** Enable teams within organizations (adds the `team`/`teamMember` tables and
+   *  an `activeTeamId` column on `session`). Off by default. */
+  teams?: boolean;
+  /** Let any signed-in user create an organization (Better Auth's default).
+   *  Set false to restrict creation to your own server-side/provisioning flow.
+   *  Runtime-only — does not affect the generated schema. */
+  allowUserToCreateOrganization?: boolean;
 }
 
 export interface LouiseAuthConfig {
@@ -61,6 +82,10 @@ export interface LouiseAuthConfig {
   /** Cache sessions in KV (`secondaryStorage` + `storeSessionInDatabase`): D1
    *  stays the source of truth, KV is the global read cache. Omit for D1-only. */
   sessionCacheKv?: SessionKV;
+  /** Enable multi-editor tenancy (organization plugin). Omit for a single-editor
+   *  site. Mirror this on `AuthSchemaConfig.organizations` when regenerating the
+   *  migration. See {@link LouiseOrganizationsConfig}. */
+  organizations?: LouiseOrganizationsConfig;
   /** Additional Better Auth plugins. */
   extraPlugins?: NonNullable<BetterAuthOptions["plugins"]>;
   /** localhost-only dev secret passed to `getSessionSecret`. */
@@ -101,7 +126,12 @@ export interface LouiseSessionUser {
 export interface LouiseAuth {
   handler(request: Request): Promise<Response>;
   api: {
-    getSession(input: { headers: Headers }): Promise<{ user?: LouiseSessionUser | null } | null>;
+    getSession(input: { headers: Headers }): Promise<{
+      user?: LouiseSessionUser | null;
+      // Present with the organization plugin: the session's active org, if the
+      // client has selected one (see `activeOrganizationId` in ./org.ts).
+      session?: { activeOrganizationId?: string | null } | null;
+    } | null>;
   };
 }
 
@@ -215,6 +245,38 @@ export async function getLouiseAuth(
               provider: "cloudflare-turnstile",
               secretKey: captchaKey,
               endpoints: ["/sign-in/magic-link"],
+            }),
+          ]
+        : []),
+      // Multi-editor tenancy (issue #100). The `schema` model-name overrides
+      // keep the org tables inside the same-D1 auth namespace when `tablePrefix`
+      // is set — the same way user/session/passkey are prefixed above — so the
+      // runtime queries the exact tables `generateAuthSchemaSql` emits.
+      ...(config.organizations
+        ? [
+            organization({
+              ...(config.organizations.teams ? { teams: { enabled: true } } : {}),
+              ...(config.organizations.allowUserToCreateOrganization !== undefined
+                ? {
+                    allowUserToCreateOrganization:
+                      config.organizations.allowUserToCreateOrganization,
+                  }
+                : {}),
+              ...(prefix
+                ? {
+                    schema: {
+                      organization: { modelName: `${prefix}organization` },
+                      member: { modelName: `${prefix}member` },
+                      invitation: { modelName: `${prefix}invitation` },
+                      ...(config.organizations.teams
+                        ? {
+                            team: { modelName: `${prefix}team` },
+                            teamMember: { modelName: `${prefix}teamMember` },
+                          }
+                        : {}),
+                    },
+                  }
+                : {}),
             }),
           ]
         : []),
