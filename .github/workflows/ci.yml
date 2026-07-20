@@ -197,11 +197,31 @@ jobs:
           # It reuses the clean room's pnpm store, so the marginal cost is the
           # check itself rather than a second cold install.
           cd "$ROOM"
+          # --map --pwa on purpose. Both modules generate code that NOTHING else
+          # compiles: the tile route and MapEmbed.astro are written into the
+          # project, and sw.js / the manifest are static files under public/.
+          # Without them here they would ship having been checked nowhere.
+          #
+          # Passing both together also guards the merge hazard they created —
+          # each contributes to `modules`, and a naive resolution lets one
+          # overwrite the other silently.
           node node_modules/create-astroid/index.mjs folio \
-            --key folio --name "Folio" --archetype portfolio --color "#5b4bff"
+            --key folio --name "Folio" --archetype portfolio --color "#5b4bff" \
+            --map --pwa
 
           test -f folio/src/pages/work.astro || {
             echo "portfolio scaffold did not write src/pages/work.astro"; exit 1; }
+          for f in src/pages/map/basemap.pmtiles.ts src/components/MapEmbed.astro \
+                   public/sw.js public/manifest.webmanifest; do
+            test -f "folio/$f" || { echo "module scaffold did not write $f"; exit 1; }
+          done
+          grep -q 'modules: \["map","pwa"\]' folio/astroid.config.ts || {
+            echo "the modules array lost a module"; cat folio/astroid.config.ts; exit 1; }
+          # sw.js is plain JS in public/ and the manifest is data — neither is
+          # type-checked by anything, so parse them explicitly.
+          node --check folio/public/sw.js
+          node -e 'JSON.parse(require("fs").readFileSync("folio/public/manifest.webmanifest","utf8"))'
+          node -e 'JSON.parse(require("fs").readFileSync("folio/package.json","utf8"))'
 
           cd folio
           cp ../pnpm-workspace.yaml .
