@@ -1,5 +1,16 @@
 # louise-toolkit
 
+## 0.17.0
+
+### Minor Changes
+
+- feat(commerce/square): detailed catalog extraction. Add `listCatalogDetailed`
+  (items + per-item category refs, `reporting_category`, and enabled modifier-list
+  bounds), `listCategories` (REGULAR categories, MENU_CATEGORY filtered), and
+  `listModifierLists`, plus the `SquareCategory` / `SquareModifier` /
+  `SquareModifierList` / `ItemModifierRef` / `DetailedCatalog` types. Additive —
+  the existing `listCatalogItems` is unchanged, so current consumers are unaffected.
+
 ## 0.16.0
 
 ### Minor Changes
