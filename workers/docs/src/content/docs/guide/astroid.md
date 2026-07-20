@@ -143,6 +143,34 @@ Opt-in capabilities, each pulling real infrastructure:
 - **`pwa`** — a scoped service worker that never caches `/api/*` or the editor,
   plus a derived manifest.
 
+## What's on by default
+
+Three things are wired into every scaffold rather than hidden behind a flag,
+because each has a client half that already ships in the editor drawer — leaving
+them unmounted meant rendering UI for a subsystem that could never have data.
+
+- **The Home dashboard** (`overviewRoute`) — draft counts, unpublished changes,
+  last edit. It's the drawer's initial panel, so it's the first screen an owner
+  sees.
+- **AI assists** (`aiRoute`, `seoFixRoute`, alt-text on upload) — rewrite a
+  selection, suggest SEO, describe an image. All editor-gated, and all degrade to
+  a hidden button when the `AI` binding is absent, so they cost nothing unused.
+- **Site health** (`healthRoute` + a daily cron) — broken links, images missing
+  alt text, published pages with SEO gaps. The summary is stored in the existing
+  `RL` namespace under its own key, so there's no extra binding to provision.
+  Until the first scan runs the panel says "not checked yet".
+
+### Crons
+
+`wrangler.jsonc` gets a `triggers.crons` list, and the generated worker's one
+`scheduled` handler dispatches on `controller.cron` — Cloudflare fires a single
+handler for every trigger and that string is the only way to tell them apart.
+
+| Cron | What runs |
+|---|---|
+| `17 4 * * *` | The daily site-health scan. Always. |
+| `0 * * * *` | The catalog re-sync safety net. Commerce only; `queues.cron: false` disables it. |
+
 ## Dormant until provisioned
 
 Astroid's modules are opt-in at the **config** level but not at the **account**

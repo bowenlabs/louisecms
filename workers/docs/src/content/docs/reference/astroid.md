@@ -181,10 +181,17 @@ unprovisioned renders, serves, says it's simulated, and never calls upstream.
 Partial provisioning counts as dormant — a half-configured integration fails
 mid-checkout rather than at boot.
 
-## Queues
+## Queues and crons
 
 `handleWebhook`, `astroidQueueHandler`, `astroidUsesQueues`, `astroidQueueNames`,
-`astroidCron`, `affectsCatalog`.
+`affectsCatalog`.
+
+`astroidCrons(config)` returns every cron expression the project needs —
+`ASTROID_HEALTH_CRON` (daily, always) plus `astroidCron(config)` (the hourly
+catalog re-sync, commerce only). Cloudflare fires **one** `scheduled` handler for
+all triggers and identifies which by `controller.cron`, so `wrangler.jsonc`'s list
+and the handler's dispatch must agree exactly — a string in one and not the other
+is a job that silently never runs. Both derive from this function for that reason.
 
 `handleWebhook` verifies the HMAC over the **raw body before anything parses it**
 — parse first and an unauthenticated caller reaches the JSON parser and everything
