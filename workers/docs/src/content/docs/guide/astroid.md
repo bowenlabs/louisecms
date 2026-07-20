@@ -1,0 +1,166 @@
+---
+title: Astroid
+description: The opinionated meta-framework over Louise and Astro — one typed config that generates the worker, middleware, and schema a site would otherwise hand-write.
+sidebar:
+  order: 14
+---
+
+Louise is the unopinionated toolkit: primitives you assemble yourself. **Astroid**
+is the opinionated preset on top — a section library, a theme system, and a single
+typed config that generates the Louise wiring a site would otherwise write by hand.
+
+```
+Astro        →  renderer / router / build
+  Louise     →  unopinionated primitives + framework glue   (louise-toolkit)
+    Astroid  →  opinions: theme, sections, config, scaffold  (astroidjs)
+```
+
+Dependencies flow one way — `astroidjs` → `louise-toolkit`, never the reverse.
+
+:::caution[Pre-1.0, and moving fast]
+Both packages are published (`astroidjs`, `create-astroid`) but pre-1.0. Breaking
+changes ship as a **minor** bump, so pin an exact version if you depend on one.
+:::
+
+## Which one do I want?
+
+| | Louise | Astroid |
+|---|---|---|
+| You already have an Astro app | ✅ add it | ❌ scaffolds a new one |
+| You want to choose your own schema, routes, auth | ✅ | ❌ it chooses for you |
+| You want a running editable site today | assembly required | one command |
+| You need a page-builder + section library | build it | ships 15 sections |
+
+If you're adding editing to an app you already have, use [Louise directly](/guide/quickstart/).
+If you're starting a brand-new site on Cloudflare, start here.
+
+## Scaffold
+
+```sh
+pnpm create astroid my-site
+```
+
+Every option is prompted for; in a non-TTY each prompt takes its default, so the
+command is CI-safe. The target directory must be empty.
+
+```
+pnpm create astroid [directory] [options]
+
+  --name <name>         Brand / site name
+  --key <slug>          Project key (slug); names the generated bindings
+  --archetype <type>    marketing | storefront | wholesale | portfolio
+  --color <hex>         Brand color
+  --host <domain>       Primary domain, e.g. example.com
+  --commerce <provider> square | stripe | fourthwall
+  --map                 Self-hosted PMTiles/MapLibre location map
+  --pwa                 Installable PWA (scoped service worker + manifest)
+  --portal              Customer/member portal (a second, isolated auth instance)
+```
+
+You get a working floor, not a blank page: an inline-editable home page,
+magic-link editor sign-in, the editor drawer wired up, migrations, and a
+`wrangler.jsonc` with every binding stubbed.
+
+## One config
+
+The whole shape of the project is one typed file. `astroid generate` turns it
+into `src/schema.ts`, `src/worker.ts`, and `src/middleware.ts`.
+
+```ts
+import { defineAstroid } from "astroidjs";
+
+export default defineAstroid({
+  key: "coracle",
+  archetype: "storefront",
+  theme: { name: "Coracle Coffee", colors: { brand: "#1f6f78" } },
+  sections: ["hero", "banner", "productGrid", "locationHours", "contact"],
+  commerce: { provider: "square" },
+  deploy: { platform: "cloudflare" },
+});
+```
+
+**One brand per project.** Every site Astroid targets serves a single brand from a
+single deploy, so the config describes one brand, not an array. What multiplexes
+is *editors* (Louise's org plugin) and *audiences* (a gated portal beside the
+public site).
+
+### Archetypes
+
+`marketing` (the lean brochure floor), `storefront` (DTC shop), `wholesale`
+(B2B/private-label), `portfolio` (gallery + client portal). An archetype is a
+preset of defaults — which sections are on, which tables exist — that the site
+then tunes, not a fork.
+
+### Sections
+
+The editable home page is an ordered list of section types. Astroid ships 15:
+`hero`, `featureGrid`, `cta`, `gallery`, `media`, `splitImage`, `steps`, `banner`,
+`faq`, `pricingTiers`, `testimonial`, `aboutIntro`, `productGrid`,
+`locationHours`, `contact`.
+
+The vocabulary is **derived from the catalog**, so a section name that has no
+component is a compile error rather than a page that silently fails to render.
+
+## The CLI
+
+```sh
+pnpm dev        # astroid dev     — regenerate, then astro dev
+pnpm build      # astroid build   — regenerate, then astro build
+pnpm doctor     # astroid doctor  — validate config, bindings, generated files
+pnpm generate   # astroid generate — rewrite the generated trio
+wrangler deploy # or: astroid deploy (plan-first provisioning)
+```
+
+### Generated vs. scaffold-once
+
+This distinction is the one worth internalising:
+
+- **Generated** — `src/schema.ts`, `src/worker.ts`, `src/middleware.ts`. A pure
+  function of your config, rewritten on every `generate`, and they carry a
+  do-not-hand-edit banner. `doctor` fails if one has drifted.
+- **Scaffold-once** — `wrangler.jsonc`, `src/auth.ts`, `src/queue.ts`,
+  `src/portal-auth.ts`, the service worker, the map embed. Written when absent and
+  never overwritten, because each exists to be edited. `wrangler.jsonc` is in this
+  set specifically so a provisioned binding id is never clobbered.
+
+Switching a module on later is a config edit plus `astroid generate` — it writes
+whatever scaffold-once files the new module needs and leaves your existing ones
+alone.
+
+## Modules
+
+Opt-in capabilities, each pulling real infrastructure:
+
+- **`commerce`** — a catalog mirror in D1 with a pulled/owned split, a webhook
+  receiver, a queue consumer, and a cron safety net. Providers fill **roles**
+  (`storefront` / `invoicing`) rather than being "the" provider, because
+  `commerce/stripe` has no catalog API and `commerce/fourthwall` has no invoicing.
+- **`portal`** — a second, fully isolated Better Auth instance for
+  customers/members: its own mount, cookie prefix, and `portal_*` tables, so a
+  portal account can't sign into the studio.
+- **`map`** — a self-hosted PMTiles basemap served from R2, brand-recoloured. No
+  API key, no external tile host.
+- **`pwa`** — a scoped service worker that never caches `/api/*` or the editor,
+  plus a derived manifest.
+
+## Dormant until provisioned
+
+Astroid's modules are opt-in at the **config** level but not at the **account**
+level: switching commerce on must not require a Square account before `pnpm dev`
+will boot.
+
+So every module follows one rule — a module whose secrets are unprovisioned is
+**dormant**. It renders, it serves, it says out loud that it is simulated, and it
+never calls upstream with a dummy credential. `create-astroid` seeds every secret
+with a loud `DUMMY_REPLACE_ME` sentinel, so a fresh clone has a complete, valid
+binding set and zero real credentials.
+
+`astroid doctor` reports which modules are dormant and exactly which secrets are
+still missing.
+
+## Next steps
+
+- [Astroid API reference](/reference/astroid/) — the exported surface.
+- [Sections](/guide/sections/) — the underlying section/block model Astroid's
+  catalog is built on.
+- [Inline editing](/guide/inline-editing/) — how the edit markers work.
