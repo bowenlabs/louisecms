@@ -318,17 +318,24 @@ jobs:
           # strings; only this step type-checks the code it produces.
           node node_modules/create-astroid/index.mjs folio \
             --key folio --name "Folio" --archetype portfolio --color "#5b4bff" \
-            --map --pwa --portal
+            --map --pwa --portal --realtime
 
           test -f folio/src/pages/work.astro || {
             echo "portfolio scaffold did not write src/pages/work.astro"; exit 1; }
           for f in src/pages/map/basemap.pmtiles.ts src/components/MapEmbed.astro \
                    public/sw.js public/manifest.webmanifest \
                    src/portal-auth.ts "src/pages/api/portal-auth/[...all].ts" \
-                   migrations/0002_portal_auth.sql; do
+                   migrations/0002_portal_auth.sql src/edit-session.ts; do
             test -f "folio/$f" || { echo "module scaffold did not write $f"; exit 1; }
           done
-          grep -q 'modules: \["map","pwa"\]' folio/astroid.config.ts || {
+          # The Durable Object binding is worthless without its migration, and the
+          # class must be exported from the ENTRY or wrangler can't resolve
+          # `class_name`. Both are deploy-time failures nothing else here catches.
+          grep -q 'new_sqlite_classes' folio/wrangler.jsonc || {
+            echo "realtime DO has no migration block"; exit 1; }
+          grep -q 'export { EditSessionDO }' folio/src/worker.ts || {
+            echo "the DO class is not exported from the worker entry"; exit 1; }
+          grep -q 'modules: \["map","pwa","realtime"\]' folio/astroid.config.ts || {
             echo "the modules array lost a module"; cat folio/astroid.config.ts; exit 1; }
           # sw.js is plain JS in public/ and the manifest is data — neither is
           # type-checked by anything, so parse them explicitly.

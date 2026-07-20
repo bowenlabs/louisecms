@@ -55,6 +55,7 @@ pnpm create astroid [directory] [options]
   --map                 Self-hosted PMTiles/MapLibre location map
   --pwa                 Installable PWA (scoped service worker + manifest)
   --portal              Customer/member portal (a second, isolated auth instance)
+  --realtime            Live multi-editor editing (a per-page Durable Object)
 ```
 
 You get a working floor, not a blank page: an inline-editable home page,
@@ -142,6 +143,8 @@ Opt-in capabilities, each pulling real infrastructure:
   API key, no external tile host.
 - **`pwa`** — a scoped service worker that never caches `/api/*` or the editor,
   plus a derived manifest.
+- **`realtime`** — live multi-editor editing on a page: a per-page Durable Object
+  holding presence, field sync, and a rich-text soft-lock. See below.
 
 ## What's on by default
 
@@ -194,6 +197,33 @@ handler for every trigger and that string is the only way to tell them apart.
 |---|---|
 | `17 4 * * *` | The daily site-health scan. Always. |
 | `0 * * * *` | The catalog re-sync safety net. Commerce only; `queues.cron: false` disables it. |
+
+### Realtime editing
+
+`modules: ["realtime"]` turns editing into a live session. A per-page Durable
+Object holds presence and authoritative field state, broadcasts changes to the
+other editors on that page, and coalesces writes to D1 on an alarm.
+
+Two properties are worth knowing:
+
+- **It augments, it does not replace.** With the module off, the socket unopened,
+  or the connection dropped, the client falls back to the existing debounced
+  auto-save. Realtime is an accelerator, never a dependency.
+- **There is one write path.** The session's flush goes through `applySaveDraft`
+  — the same merge-over-pending-draft the fetch auto-save uses — so drafts,
+  version history, publish semantics, and read-your-writes are all unchanged. The
+  DO is a new front end to that path, not a parallel store.
+
+The rich-text body takes a **soft-lock** (one editor at a time) rather than being
+last-writer-wins clobbered, and locked values are never fanned out to peers — so
+raw rich text doesn't cross sockets.
+
+Astroid scaffolds `src/edit-session.ts` (the DO subclass — it must import
+`cloudflare:workers`, so it can't live in the toolkit), the `durable_objects`
+binding, and the migration block. That last one is the part nobody gets right
+from memory: a DO class needs a migration tag, it must be `new_sqlite_classes`
+rather than `new_classes`, and the storage backend **cannot be changed after the
+class is first deployed**.
 
 ## Dormant until provisioned
 
