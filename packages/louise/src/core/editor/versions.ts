@@ -18,6 +18,7 @@ import { getTableConfig, type SQLiteColumn, type SQLiteTable } from "drizzle-orm
 import type { EditorSession } from "../auth/types.js";
 import { createVersionedLocalApi, type DeferReindex } from "../content/localApi.js";
 import { type CollectionConfig, flattenFields } from "../content/types.js";
+import { LouiseValidationError } from "../errors.js";
 import { d1Bookmark, db, openD1Session, serializeD1BookmarkCookie } from "../db/index.js";
 import { s, standardValidate } from "../schema/index.js";
 import type { WorkerRoute } from "../worker/index.js";
@@ -130,6 +131,29 @@ export async function applySaveDraft<Env extends EditorRouteEnv = EditorRouteEnv
   const kv = deps.bufferKv?.(env);
   const bufferKey = draftBufferKey(deps.config.slug, id);
 
+  // `api.saveDraft` runs the collection's `beforeChange` hook, which may throw a
+  // `LouiseValidationError` (e.g. an unknown section `_type`, a setting outside
+  // its options). That is a client-input error, not a server fault — surface it
+  // as a 422 with the per-field violations, the same shape `deps.validate`
+  // produces above, rather than letting it escape the route as an unhandled 500.
+  // A non-validation throw (a real DB failure) still propagates unchanged.
+  const saveDraft = async (
+    data: Record<string, unknown>,
+  ): Promise<{ ok: true; version: unknown } | { ok: false; result: SaveDraftResult }> => {
+    try {
+      return { ok: true, version: await api.saveDraft(context, id, data as never) };
+    } catch (err) {
+      if (err instanceof LouiseValidationError) {
+        const { message, violations } = violationsOf(err);
+        return {
+          ok: false,
+          result: { ok: false, status: 422, error: message, ...(violations ? { violations } : {}) },
+        };
+      }
+      throw err;
+    }
+  };
+
   // Read the coalescing buffer *first*: when one exists it is already the merge
   // base (it's always ≥ the D1 draft), which makes the version query below dead
   // work. The buffer coalesces writes; gating this read on it coalesces the reads
@@ -176,12 +200,13 @@ export async function applySaveDraft<Env extends EditorRouteEnv = EditorRouteEnv
     const now = Date.now();
     const flushMs = deps.bufferFlushMs ?? DEFAULT_FLUSH_MS;
     if (shouldFlushBuffer(buffered, now, flushMs)) {
-      const version = await api.saveDraft(context, id, merged as never);
+      const saved = await saveDraft(merged);
+      if (!saved.ok) return saved.result;
       await writeDraftBuffer(kv, bufferKey, { data: merged, updatedAt: now, flushedAt: now });
       return {
         ok: true,
         status: 201,
-        body: { version, buffered: false },
+        body: { version: saved.version, buffered: false },
         bookmark: d1Bookmark(session) ?? undefined,
       };
     }
@@ -200,8 +225,14 @@ export async function applySaveDraft<Env extends EditorRouteEnv = EditorRouteEnv
     };
   }
 
-  const version = await api.saveDraft(context, id, merged as never);
-  return { ok: true, status: 201, body: { version }, bookmark: d1Bookmark(session) ?? undefined };
+  const saved = await saveDraft(merged);
+  if (!saved.ok) return saved.result;
+  return {
+    ok: true,
+    status: 201,
+    body: { version: saved.version },
+    bookmark: d1Bookmark(session) ?? undefined,
+  };
 }
 
 /** Extract per-field violations from a thrown validation error, if present. */
@@ -340,9 +371,27 @@ export function versionsRoute<Env extends EditorRouteEnv = EditorRouteEnv>(
       // Flush any buffered work to D1 first, so "publish the latest draft" sees
       // the freshest edits (the buffer may hold writes not yet flushed) — this
       // becomes the newest draft version.
+      //
+      // This flush runs the collection's `beforeChange` hook, so a coalesced
+      // auto-save that the buffer never validated (a bad section absorbed into
+      // KV and answered 200) is validated HERE, at publish. The validation error
+      // must surface as a 422 with its violations, not the raw 500 an uncaught
+      // throw before the try/catch below would produce — the bad content is
+      // correctly kept off the live page either way, but the editor needs the
+      // violations, not a 500.
       if (kv) {
         const buffered = await readDraftBuffer(kv, bufferKey);
-        if (buffered) await api.saveDraft(context, id, buffered.data as never);
+        if (buffered) {
+          try {
+            await api.saveDraft(context, id, buffered.data as never);
+          } catch (err) {
+            if (err instanceof LouiseValidationError) {
+              const { message, violations } = violationsOf(err);
+              return json({ error: message, ...(violations ? { violations } : {}) }, 422);
+            }
+            throw err;
+          }
+        }
       }
       let versionId = explicitVersionId;
       if (versionId === undefined) {
