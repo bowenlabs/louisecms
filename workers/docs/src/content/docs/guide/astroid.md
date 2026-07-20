@@ -167,10 +167,21 @@ them unmounted meant rendering UI for a subsystem that could never have data.
 - **AI assists** (`aiRoute`, `seoFixRoute`, alt-text on upload) — rewrite a
   selection, suggest SEO, describe an image. All editor-gated, and all degrade to
   a hidden button when the `AI` binding is absent, so they cost nothing unused.
+- **The typed Actions surface** (`src/actions/index.ts`) — `save`, `saveDraft`,
+  and `settings` as Astro Actions beside the raw routes. Not a second
+  implementation: each shares its route's store path, so a field is validated
+  once and written in one place however it was called. Add your own beside them.
+- **Real-visitor Core Web Vitals** — a beacon in `public/vitals.js` posts LCP,
+  CLS, and INP to an Analytics Engine dataset, and the daily health scan reads
+  the p75 back. Collection is free and needs nothing; the read-back needs
+  `CF_ACCOUNT_ID` + `CF_API_TOKEN` (the SQL API is account-scoped and has no
+  binding), and until those are real the badge reads "not measured yet".
 - **Site health** (`healthRoute` + a daily cron) — broken links, images missing
   alt text, published pages with SEO gaps. The summary is stored in the existing
   `RL` namespace under its own key, so there's no extra binding to provision.
-  Until the first scan runs the panel says "not checked yet".
+  Until the first scan runs the panel says "not checked yet". The inbox card
+  counts unhandled inquiries — the whole table, because the Inquiries tab
+  reviews and *clears* submissions, so a surviving row is one still waiting.
 
 ### Edge caching (off by default)
 
